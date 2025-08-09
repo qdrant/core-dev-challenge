@@ -32,16 +32,16 @@ struct State<'a, G: Graph> {
     buckets: BTreeMap<usize, BTreeSet<G::Node>>,
 }
 
-struct Neighbor<G: Graph> {
-    predecessor: G::Node,
-    node: G::Node,
+struct Edge<G: Graph> {
+    source: G::Node,
+    target: G::Node,
     cost: G::Cost,
     total_cost: G::Cost,
 }
 
 struct BucketResult<G: Graph> {
-    same_bucket_neighbors: Vec<Neighbor<G>>,
-    future_buckets_neighbors: Vec<Neighbor<G>>,
+    same_bucket_neighbors: Vec<Edge<G>>,
+    future_buckets_neighbors: Vec<Edge<G>>,
 }
 
 impl<'a, G: Graph> State<'a, G> {
@@ -129,31 +129,29 @@ impl<'a, G: Graph> State<'a, G> {
     fn update_same_bucket_neighbor(
         &mut self,
         pending_bucket: &mut BTreeSet<G::Node>,
-        neighbor: &Neighbor<G>,
+        neighbor: &Edge<G>,
     ) {
         let new_cost = self.update_neighbor_cost(neighbor);
         if new_cost {
-            self.predecessors
-                .insert(neighbor.node, neighbor.predecessor);
-            pending_bucket.insert(neighbor.node);
+            self.predecessors.insert(neighbor.target, neighbor.source);
+            pending_bucket.insert(neighbor.target);
         }
     }
 
-    fn update_future_bucket_neighor(&mut self, neighbor: &Neighbor<G>) {
+    fn update_future_bucket_neighor(&mut self, neighbor: &Edge<G>) {
         let new_cost = self.update_neighbor_cost(neighbor);
         if new_cost {
-            self.predecessors
-                .insert(neighbor.node, neighbor.predecessor);
+            self.predecessors.insert(neighbor.target, neighbor.source);
 
             let bucket_id = G::floor_cost(neighbor.total_cost / self.delta);
 
             let bucket = self.buckets.entry(bucket_id).or_default();
-            bucket.insert(neighbor.node);
+            bucket.insert(neighbor.target);
         }
     }
 
-    fn update_neighbor_cost(&mut self, neighbor: &Neighbor<G>) -> bool {
-        if let Some(current_cost) = self.costs.get_mut(&neighbor.node) {
+    fn update_neighbor_cost(&mut self, neighbor: &Edge<G>) -> bool {
+        if let Some(current_cost) = self.costs.get_mut(&neighbor.target) {
             if neighbor.total_cost < *current_cost {
                 *current_cost = neighbor.total_cost;
                 true
@@ -161,7 +159,7 @@ impl<'a, G: Graph> State<'a, G> {
                 false
             }
         } else {
-            self.costs.insert(neighbor.node, neighbor.total_cost);
+            self.costs.insert(neighbor.target, neighbor.total_cost);
             true
         }
     }
@@ -171,12 +169,11 @@ impl<'a, G: Graph> State<'a, G> {
 
         if let Some(neighbors) = self.graph.get_neighbors(node) {
             let (same_bucket_neighbors, future_buckets_neighbors) = neighbors
-                .iter()
-                .map(|(neighbor, cost)| Neighbor::<G> {
-                    predecessor: *node,
-                    node: *neighbor,
-                    cost: *cost,
-                    total_cost: current_cost + *cost,
+                .map(|(neighbor, cost)| Edge::<G> {
+                    source: *node,
+                    target: neighbor,
+                    cost: cost,
+                    total_cost: current_cost + cost,
                 })
                 .partition::<Vec<_>, _>(|neighbor| neighbor.cost <= self.delta);
 

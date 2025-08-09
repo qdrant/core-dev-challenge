@@ -13,7 +13,10 @@ pub trait Graph: Sized + Send + Sync {
         + Add<Output = Self::Cost>
         + Div<Output = Self::Cost>;
 
-    fn get_neighbors(&self, node: &Self::Node) -> Option<&[(Self::Node, Self::Cost)]>;
+    fn get_neighbors(
+        &self,
+        node: &Self::Node,
+    ) -> Option<impl Iterator<Item = (Self::Node, Self::Cost)>>;
 
     fn floor_cost(cost: Self::Cost) -> usize;
 }

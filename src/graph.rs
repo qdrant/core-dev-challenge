@@ -7,18 +7,35 @@ use std::fs::File;
 use std::io::{self, BufReader, BufWriter};
 use std::sync::{Arc, Mutex};
 
-pub type Vertex = u64;
+pub type Node = u64;
 pub type Cost = f64;
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Graph {
-    pub adjacency: HashMap<Vertex, HashMap<Vertex, Cost>>,
+    pub adjacency: HashMap<Node, HashMap<Node, Cost>>,
+}
+
+impl crate::traits::Graph for Graph {
+    type Node = Node;
+    type Cost = Cost;
+
+    fn get_neighbors(
+        &self,
+        node: &Self::Node,
+    ) -> Option<impl Iterator<Item = (Self::Node, Self::Cost)>> {
+        let neighbors = self.adjacency.get(node)?;
+        Some(neighbors.iter().map(|(node, cost)| (*node, *cost)))
+    }
+
+    fn floor_cost(cost: Self::Cost) -> usize {
+        cost.floor() as usize
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
 struct State {
     cost: Cost,
-    position: Vertex,
+    position: Node,
 }
 
 impl Eq for State {}
@@ -42,34 +59,34 @@ impl Graph {
         }
     }
 
-    pub fn add_vertex(&mut self, v: Vertex) {
+    pub fn add_vertex(&mut self, v: Node) {
         self.adjacency.entry(v).or_default();
     }
 
-    pub fn add_edge(&mut self, from: Vertex, to: Vertex, weight: Cost) {
+    pub fn add_edge(&mut self, from: Node, to: Node, weight: Cost) {
         self.add_vertex(from);
         self.add_vertex(to);
         self.adjacency.get_mut(&from).unwrap().insert(to, weight);
     }
 
-    pub fn remove_vertex(&mut self, v: Vertex) {
+    pub fn remove_vertex(&mut self, v: Node) {
         self.adjacency.remove(&v);
         for neighbors in self.adjacency.values_mut() {
             neighbors.remove(&v);
         }
     }
 
-    pub fn remove_edge(&mut self, from: Vertex, to: Vertex) {
+    pub fn remove_edge(&mut self, from: Node, to: Node) {
         if let Some(neighbors) = self.adjacency.get_mut(&from) {
             neighbors.remove(&to);
         }
     }
 
-    pub fn neighbors(&self, v: Vertex) -> Option<&HashMap<Vertex, Cost>> {
+    pub fn neighbors(&self, v: Node) -> Option<&HashMap<Node, Cost>> {
         self.adjacency.get(&v)
     }
 
-    pub fn get_edge_weight(&self, from: Vertex, to: Vertex) -> Option<Cost> {
+    pub fn get_edge_weight(&self, from: Node, to: Node) -> Option<Cost> {
         self.adjacency.get(&from)?.get(&to).copied()
     }
 
@@ -85,13 +102,13 @@ impl Graph {
         bincode::deserialize_from(reader).map_err(io::Error::other)
     }
 
-    pub fn shortest_path(&self, start: Vertex, end: Vertex) -> Option<(Vec<Vertex>, Cost)> {
+    pub fn shortest_path(&self, start: Node, end: Node) -> Option<(Vec<Node>, Cost)> {
         if !self.adjacency.contains_key(&start) || !self.adjacency.contains_key(&end) {
             return None;
         }
 
-        let mut distances_from_start: HashMap<Vertex, Cost> = HashMap::new();
-        let mut predecessors: HashMap<Vertex, Vertex> = HashMap::new();
+        let mut distances_from_start: HashMap<Node, Cost> = HashMap::new();
+        let mut predecessors: HashMap<Node, Node> = HashMap::new();
         let mut heap = BinaryHeap::new();
 
         distances_from_start.insert(start, 0.0);
@@ -147,12 +164,12 @@ impl Graph {
     ///
     /// # Returns
     /// Optional tuple of (path, total_cost)
-    pub fn parallel_shortest_path(
+    pub fn naive_parallel_shortest_path(
         &self,
-        start: Vertex,
-        end: Vertex,
+        start: Node,
+        end: Node,
         delta: Option<Cost>,
-    ) -> Option<(Vec<Vertex>, Cost)> {
+    ) -> Option<(Vec<Node>, Cost)> {
         if !self.adjacency.contains_key(&start) || !self.adjacency.contains_key(&end) {
             return None;
         }
@@ -161,9 +178,9 @@ impl Graph {
         let delta = delta.unwrap_or_else(|| self.calculate_optimal_delta());
 
         // Initialize data structures
-        let mut distances: HashMap<Vertex, Cost> = HashMap::new();
-        let mut predecessors: HashMap<Vertex, Vertex> = HashMap::new();
-        let mut buckets: Vec<Vec<Vertex>> = vec![vec![]]; // Start with one bucket
+        let mut distances: HashMap<Node, Cost> = HashMap::new();
+        let mut predecessors: HashMap<Node, Node> = HashMap::new();
+        let mut buckets: Vec<Vec<Node>> = vec![vec![]]; // Start with one bucket
 
         distances.insert(start, 0.0);
         buckets[0].push(start);
@@ -185,7 +202,7 @@ impl Graph {
                 }
 
                 // Collect light edge requests in parallel
-                let light_requests: Arc<Mutex<Vec<(Vertex, Cost, Vertex)>>> =
+                let light_requests: Arc<Mutex<Vec<(Node, Cost, Node)>>> =
                     Arc::new(Mutex::new(vec![]));
 
                 current_bucket.par_iter().for_each(|&vertex| {
@@ -242,8 +259,7 @@ impl Graph {
 
             // Process heavy edges from current bucket
             let current_bucket = &buckets[current_bucket_idx];
-            let heavy_requests: Arc<Mutex<Vec<(Vertex, Cost, Vertex)>>> =
-                Arc::new(Mutex::new(vec![]));
+            let heavy_requests: Arc<Mutex<Vec<(Node, Cost, Node)>>> = Arc::new(Mutex::new(vec![]));
 
             current_bucket.par_iter().for_each(|&vertex| {
                 let vertex_dist = distances[&vertex];
@@ -329,7 +345,7 @@ impl Graph {
     }
 
     // For backward compatibility with unweighted graphs
-    pub fn add_unweighted_edge(&mut self, from: Vertex, to: Vertex) {
+    pub fn add_unweighted_edge(&mut self, from: Node, to: Node) {
         self.add_edge(from, to, 1.0);
     }
 
@@ -344,7 +360,7 @@ impl Graph {
     /// # Returns
     /// A new connected Graph with random edges
     pub fn random_connected_graph(
-        num_vertices: Vertex,
+        num_vertices: Node,
         additional_edges: usize,
         min_weight: Cost,
         max_weight: Cost,
