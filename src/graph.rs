@@ -361,7 +361,7 @@ impl Graph {
     /// A new connected Graph with random edges
     pub fn random_connected_graph(
         num_vertices: Node,
-        additional_edges: usize,
+        additional_edges: u64,
         min_weight: Cost,
         max_weight: Cost,
     ) -> Self {
