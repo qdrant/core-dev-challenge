@@ -135,13 +135,13 @@ fn test_random_connected_graph() {
 #[test]
 fn test_parallel_random_connected_graph() {
     for _ in 0..100 {
-        let graph = Graph::random_connected_graph(100, 5, 1.0, 50.0);
+        let graph = Graph::random_connected_graph(1000, 5, 1.0, 50.0);
 
         // Check connectivity by ensuring there's a path from 0 to 9
-        let (path, cost) = graph.shortest_path(0, 99).unwrap();
+        let (path, cost) = graph.shortest_path(0, 999).unwrap();
         assert!(!path.is_empty());
 
-        let (path2, cost2) = graph.parallel_shortest_path(0, 99, 0.25).unwrap();
+        let (path2, cost2) = graph.parallel_shortest_path(0, 999, 3.0).unwrap();
         assert!(!path2.is_empty());
 
         assert_eq!((Vec::from(path2), cost2), (path, cost));

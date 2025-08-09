@@ -32,6 +32,7 @@ struct State<'a, G: Graph> {
     buckets: BTreeMap<usize, BTreeSet<G::Node>>,
 }
 
+#[derive(Debug)]
 struct Edge<G: Graph> {
     source: G::Node,
     target: G::Node,
@@ -123,13 +124,9 @@ impl<'a, G: Graph> State<'a, G> {
             for neighbor in result.same_bucket_neighbors.iter() {
                 self.update_same_bucket_neighbor(&mut pending_bucket, neighbor);
             }
-        }
 
-        if pending_bucket.is_empty() {
-            for result in results.iter().flatten().flatten() {
-                for neighbor in result.future_buckets_neighbors.iter() {
-                    self.update_future_bucket_neighbor(neighbor);
-                }
+            for neighbor in result.future_buckets_neighbors.iter() {
+                self.update_future_bucket_neighbor(neighbor);
             }
         }
 
@@ -159,9 +156,10 @@ impl<'a, G: Graph> State<'a, G> {
     }
 
     fn update_neighbor_cost(&mut self, neighbor: &Edge<G>, tentative: bool) -> bool {
-        if let Some((current_cost, _)) = self.costs.get_mut(&neighbor.target) {
+        if let Some((current_cost, current_tentative)) = self.costs.get_mut(&neighbor.target) {
             if neighbor.total_cost < *current_cost {
                 *current_cost = neighbor.total_cost;
+                *current_tentative = tentative;
                 true
             } else {
                 false

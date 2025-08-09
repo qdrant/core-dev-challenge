@@ -3,7 +3,7 @@ use core::ops::{Add, Div};
 
 use num_traits::Float;
 
-pub trait Graph: Sized + Send + Sync {
+pub trait Graph: Sized + Send + Sync + Debug {
     type Node: Send + Sync + Copy + Debug + Ord;
     type Cost: Send
         + Sync
