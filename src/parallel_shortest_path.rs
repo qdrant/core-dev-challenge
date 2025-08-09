@@ -27,7 +27,7 @@ impl<G: Graph> CanComputeParallelShortestPath for G {
 struct State<'a, G: Graph> {
     graph: &'a G,
     delta: G::Cost,
-    costs: BTreeMap<G::Node, G::Cost>,
+    costs: BTreeMap<G::Node, (G::Cost, bool)>,
     predecessors: BTreeMap<G::Node, G::Node>,
     buckets: BTreeMap<usize, BTreeSet<G::Node>>,
 }
@@ -54,7 +54,7 @@ impl<'a, G: Graph> State<'a, G> {
         let mut state = Self {
             graph,
             delta,
-            costs: BTreeMap::from([(source, G::Cost::zero())]),
+            costs: BTreeMap::from([(source, (G::Cost::zero(), false))]),
             predecessors: BTreeMap::new(),
             buckets: BTreeMap::new(),
         };
@@ -69,7 +69,7 @@ impl<'a, G: Graph> State<'a, G> {
         source: G::Node,
         target: G::Node,
     ) -> Option<(VecDeque<G::Node>, G::Cost)> {
-        let &cost = self.costs.get(&target)?;
+        let &(cost, _) = self.costs.get(&target)?;
         let mut path = VecDeque::from([target]);
 
         let mut current = target;
@@ -87,16 +87,18 @@ impl<'a, G: Graph> State<'a, G> {
         Some((path, cost))
     }
 
-    fn process_buckets(&mut self, _target: G::Node) {
+    fn process_buckets(&mut self, target: G::Node) {
         let mut current_bucket_id = 0;
         while let Some((bucket_id, bucket)) = self.buckets.pop_first() {
             debug_assert!(bucket_id > current_bucket_id);
             current_bucket_id = bucket_id;
 
             self.process_next_bucket(bucket);
-            // if self.costs.contains_key(&target) {
-            //     return;
-            // }
+            if let Some((_, tentative)) = self.costs.get(&target)
+                && !tentative
+            {
+                return;
+            }
         }
     }
 
@@ -139,7 +141,7 @@ impl<'a, G: Graph> State<'a, G> {
         pending_bucket: &mut BTreeSet<G::Node>,
         neighbor: &Edge<G>,
     ) {
-        let new_cost = self.update_neighbor_cost(neighbor);
+        let new_cost = self.update_neighbor_cost(neighbor, false);
         if new_cost {
             self.predecessors.insert(neighbor.target, neighbor.source);
             pending_bucket.insert(neighbor.target);
@@ -147,7 +149,7 @@ impl<'a, G: Graph> State<'a, G> {
     }
 
     fn update_future_bucket_neighbor(&mut self, neighbor: &Edge<G>) {
-        let new_cost = self.update_neighbor_cost(neighbor);
+        let new_cost = self.update_neighbor_cost(neighbor, true);
         if new_cost {
             self.predecessors.insert(neighbor.target, neighbor.source);
             let bucket_id = G::floor_cost(neighbor.total_cost / self.delta);
@@ -156,13 +158,8 @@ impl<'a, G: Graph> State<'a, G> {
         }
     }
 
-    fn update_neighbor_cost(&mut self, neighbor: &Edge<G>) -> bool {
-        if let Some(current_cost) = self.costs.get_mut(&neighbor.target) {
-            println!(
-                "Updating cost for node {:?} from {:?} to {:?}",
-                neighbor.target, current_cost, neighbor.total_cost
-            );
-
+    fn update_neighbor_cost(&mut self, neighbor: &Edge<G>, tentative: bool) -> bool {
+        if let Some((current_cost, _)) = self.costs.get_mut(&neighbor.target) {
             if neighbor.total_cost < *current_cost {
                 *current_cost = neighbor.total_cost;
                 true
@@ -170,18 +167,14 @@ impl<'a, G: Graph> State<'a, G> {
                 false
             }
         } else {
-            println!(
-                "Inserting new node {:?} with cost {:?}",
-                neighbor.target, neighbor.total_cost
-            );
-
-            self.costs.insert(neighbor.target, neighbor.total_cost);
+            self.costs
+                .insert(neighbor.target, (neighbor.total_cost, tentative));
             true
         }
     }
 
     fn process_neighbors(&self, node: &G::Node) -> Option<BucketResult<G>> {
-        let current_cost = self.costs.get(node).cloned().unwrap();
+        let (current_cost, _) = self.costs.get(node).cloned().unwrap();
 
         if let Some(neighbors) = self.graph.get_neighbors(node) {
             let (same_bucket_neighbors, future_buckets_neighbors) = neighbors

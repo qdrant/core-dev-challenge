@@ -114,27 +114,34 @@ fn test_unweighted_edge() {
 
 #[test]
 fn test_random_connected_graph() {
+    let graph = Graph::random_connected_graph(10, 5, 1.0, 10.0);
+
+    // Check that we have the right number of vertices
+    assert_eq!(graph.adjacency.len(), 10);
+
+    // Count edges (should be at least 9 for connectivity + 5 additional)
+    let edge_count: usize = graph
+        .adjacency
+        .values()
+        .map(|neighbors| neighbors.len())
+        .sum();
+    assert!(edge_count >= 14); // 9 for spanning tree + 5 additional
+
+    // Check connectivity by ensuring there's a path from 0 to 9
+    let (path, _) = graph.shortest_path(0, 9).unwrap();
+    assert!(!path.is_empty());
+}
+
+#[test]
+fn test_parallel_random_connected_graph() {
     for _ in 0..100 {
-        let graph = Graph::random_connected_graph(10, 5, 1.0, 10.0);
-
-        println!("testing random graph: {:#?}", graph);
-
-        // Check that we have the right number of vertices
-        assert_eq!(graph.adjacency.len(), 10);
-
-        // Count edges (should be at least 9 for connectivity + 5 additional)
-        let edge_count: usize = graph
-            .adjacency
-            .values()
-            .map(|neighbors| neighbors.len())
-            .sum();
-        assert!(edge_count >= 14); // 9 for spanning tree + 5 additional
+        let graph = Graph::random_connected_graph(100, 5, 1.0, 50.0);
 
         // Check connectivity by ensuring there's a path from 0 to 9
-        let (path, cost) = graph.shortest_path(0, 9).unwrap();
+        let (path, cost) = graph.shortest_path(0, 99).unwrap();
         assert!(!path.is_empty());
 
-        let (path2, cost2) = graph.parallel_shortest_path(0, 9, 0.25).unwrap();
+        let (path2, cost2) = graph.parallel_shortest_path(0, 99, 0.25).unwrap();
         assert!(!path2.is_empty());
 
         assert_eq!((Vec::from(path2), cost2), (path, cost));
