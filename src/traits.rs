@@ -1,10 +1,13 @@
 use std::ops::{Add, Div};
 
+use num_traits::Float;
+
 pub trait Graph: Sized + Send + Sync {
     type Node: Send + Sync + Copy + Ord;
     type Cost: Send
         + Sync
         + Copy
+        + Float
         + Default
         + PartialOrd
         + Add<Output = Self::Cost>

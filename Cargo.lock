@@ -198,6 +198,7 @@ version = "0.1.0"
 dependencies = [
  "bincode",
  "criterion",
+ "num-traits",
  "rand",
  "rayon",
  "serde",
