@@ -1,4 +1,4 @@
-use criterion::{criterion_group, criterion_main, Criterion};
+use criterion::{Criterion, criterion_group, criterion_main};
 use graph_challenge::graph::Graph;
 
 fn bench_shortest_path(c: &mut Criterion) {
@@ -18,8 +18,5 @@ fn bench_graph_generation(c: &mut Criterion) {
     });
 }
 
-criterion_group!(benches, 
-    bench_shortest_path,
-    bench_graph_generation
-);
-criterion_main!(benches); 
+criterion_group!(benches, bench_shortest_path, bench_graph_generation);
+criterion_main!(benches);

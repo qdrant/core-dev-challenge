@@ -40,7 +40,7 @@ The challenge of this interview is to propose an improvement to the current impl
 
 What can be improved:
 
-- Speed of shortest path search. For example: 
+- Speed of shortest path search. For example:
     - by using SIMD instructions.
     - by parallelization
 - Memory usage. For example by changing data structures, but without sacrificing performance.
@@ -63,6 +63,3 @@ Backward compatibility is not required, you can change the API of the Graph or p
 For example, if you are implementing ability to work with graph without loading it into memory, please provide a test scenario which would demonstrate operation of graph which doesn't fit into memory.
 
 Feel free to use any tools you need to develop your solution, but please try to minimize the number of dependencies. E.g. please try to avoid using any existing crates for graph algorithms.
-
-
-

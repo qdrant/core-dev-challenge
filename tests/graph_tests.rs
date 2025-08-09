@@ -83,7 +83,7 @@ fn test_complex_shortest_path() {
     // Test shortest path from 1 to 5
     // Path options:
     // 1 -> 6 -> 7 -> 5 = 2 + 5 + 3 = 10
-    // 1 -> 2 -> 7 -> 5 = 4 + 3 + 3 = 10  
+    // 1 -> 2 -> 7 -> 5 = 4 + 3 + 3 = 10
     // 1 -> 8 -> 5 = 6 + 4 = 10
     // 1 -> 2 -> 3 -> 4 -> 5 = 4 + 2 + 3 + 1 = 10
     let (path1, cost1) = g.shortest_path(1, 5).unwrap();
@@ -105,8 +105,6 @@ fn test_complex_shortest_path() {
     assert!(g.shortest_path(5, 1).is_none());
 }
 
-
-
 #[test]
 fn test_unweighted_edge() {
     let mut g = Graph::new();
@@ -114,20 +112,22 @@ fn test_unweighted_edge() {
     assert_eq!(g.get_edge_weight(1, 2), Some(1.0));
 }
 
-
 #[test]
 fn test_random_connected_graph() {
     let graph = Graph::random_connected_graph(10, 5, 1.0, 10.0);
-    
+
     // Check that we have the right number of vertices
     assert_eq!(graph.adjacency.len(), 10);
-    
+
     // Count edges (should be at least 9 for connectivity + 5 additional)
-    let edge_count: usize = graph.adjacency.values().map(|neighbors| neighbors.len()).sum();
+    let edge_count: usize = graph
+        .adjacency
+        .values()
+        .map(|neighbors| neighbors.len())
+        .sum();
     assert!(edge_count >= 14); // 9 for spanning tree + 5 additional
-    
+
     // Check connectivity by ensuring there's a path from 0 to 9
     let (path, _cost) = graph.shortest_path(0, 9).unwrap();
     assert!(!path.is_empty());
-    
 }
