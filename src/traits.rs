@@ -1,12 +1,14 @@
-use std::ops::{Add, Div};
+use core::fmt::Debug;
+use core::ops::{Add, Div};
 
 use num_traits::Float;
 
 pub trait Graph: Sized + Send + Sync {
-    type Node: Send + Sync + Copy + Ord;
+    type Node: Send + Sync + Copy + Debug + Ord;
     type Cost: Send
         + Sync
         + Copy
+        + Debug
         + Float
         + Default
         + PartialOrd

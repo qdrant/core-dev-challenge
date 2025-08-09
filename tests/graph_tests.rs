@@ -117,6 +117,8 @@ fn test_random_connected_graph() {
     for _ in 0..100 {
         let graph = Graph::random_connected_graph(10, 5, 1.0, 10.0);
 
+        println!("testing random graph: {:#?}", graph);
+
         // Check that we have the right number of vertices
         assert_eq!(graph.adjacency.len(), 10);
 

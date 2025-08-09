@@ -87,12 +87,16 @@ impl<'a, G: Graph> State<'a, G> {
         Some((path, cost))
     }
 
-    fn process_buckets(&mut self, target: G::Node) {
-        while let Some((_bucket_id, bucket)) = self.buckets.pop_first() {
+    fn process_buckets(&mut self, _target: G::Node) {
+        let mut current_bucket_id = 0;
+        while let Some((bucket_id, bucket)) = self.buckets.pop_first() {
+            debug_assert!(bucket_id > current_bucket_id);
+            current_bucket_id = bucket_id;
+
             self.process_next_bucket(bucket);
-            if self.costs.contains_key(&target) {
-                return;
-            }
+            // if self.costs.contains_key(&target) {
+            //     return;
+            // }
         }
     }
 
@@ -113,13 +117,17 @@ impl<'a, G: Graph> State<'a, G> {
 
         let mut pending_bucket = BTreeSet::new();
 
-        for result in results.into_iter().flatten().flatten() {
-            for neighbor in result.same_bucket_neighbors {
-                self.update_same_bucket_neighbor(&mut pending_bucket, &neighbor);
+        for result in results.iter().flatten().flatten() {
+            for neighbor in result.same_bucket_neighbors.iter() {
+                self.update_same_bucket_neighbor(&mut pending_bucket, neighbor);
             }
+        }
 
-            for neighbor in result.future_buckets_neighbors {
-                self.update_future_bucket_neighor(&neighbor);
+        if pending_bucket.is_empty() {
+            for result in results.iter().flatten().flatten() {
+                for neighbor in result.future_buckets_neighbors.iter() {
+                    self.update_future_bucket_neighbor(neighbor);
+                }
             }
         }
 
@@ -138,13 +146,11 @@ impl<'a, G: Graph> State<'a, G> {
         }
     }
 
-    fn update_future_bucket_neighor(&mut self, neighbor: &Edge<G>) {
+    fn update_future_bucket_neighbor(&mut self, neighbor: &Edge<G>) {
         let new_cost = self.update_neighbor_cost(neighbor);
         if new_cost {
             self.predecessors.insert(neighbor.target, neighbor.source);
-
             let bucket_id = G::floor_cost(neighbor.total_cost / self.delta);
-
             let bucket = self.buckets.entry(bucket_id).or_default();
             bucket.insert(neighbor.target);
         }
@@ -152,6 +158,11 @@ impl<'a, G: Graph> State<'a, G> {
 
     fn update_neighbor_cost(&mut self, neighbor: &Edge<G>) -> bool {
         if let Some(current_cost) = self.costs.get_mut(&neighbor.target) {
+            println!(
+                "Updating cost for node {:?} from {:?} to {:?}",
+                neighbor.target, current_cost, neighbor.total_cost
+            );
+
             if neighbor.total_cost < *current_cost {
                 *current_cost = neighbor.total_cost;
                 true
@@ -159,6 +170,11 @@ impl<'a, G: Graph> State<'a, G> {
                 false
             }
         } else {
+            println!(
+                "Inserting new node {:?} with cost {:?}",
+                neighbor.target, neighbor.total_cost
+            );
+
             self.costs.insert(neighbor.target, neighbor.total_cost);
             true
         }
