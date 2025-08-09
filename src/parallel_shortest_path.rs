@@ -4,23 +4,23 @@ use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use crate::traits::Graph;
 
 pub struct State<G: Graph> {
-    pub graph: G,
-    pub delta: G::Cost,
-    pub costs: BTreeMap<G::Node, G::Cost>,
-    pub predecessors: BTreeMap<G::Node, G::Node>,
-    pub buckets: BTreeMap<usize, BTreeSet<G::Node>>,
+    graph: G,
+    delta: G::Cost,
+    costs: BTreeMap<G::Node, G::Cost>,
+    predecessors: BTreeMap<G::Node, G::Node>,
+    buckets: BTreeMap<usize, BTreeSet<G::Node>>,
 }
 
-pub struct Neighbor<G: Graph> {
-    pub predecessor: G::Node,
-    pub node: G::Node,
-    pub cost: G::Cost,
-    pub total_cost: G::Cost,
+struct Neighbor<G: Graph> {
+    predecessor: G::Node,
+    node: G::Node,
+    cost: G::Cost,
+    total_cost: G::Cost,
 }
 
-pub struct BucketResult<G: Graph> {
-    pub same_bucket_neighbors: Vec<Neighbor<G>>,
-    pub future_buckets_neighbors: Vec<Neighbor<G>>,
+struct BucketResult<G: Graph> {
+    same_bucket_neighbors: Vec<Neighbor<G>>,
+    future_buckets_neighbors: Vec<Neighbor<G>>,
 }
 
 impl<G: Graph> State<G> {
@@ -37,7 +37,7 @@ impl<G: Graph> State<G> {
             buckets: BTreeMap::new(),
         };
 
-        state.process_next_bucket(0, BTreeSet::from([source]));
+        state.process_next_bucket(BTreeSet::from([source]));
         state.process_buckets(target);
         state.retrieve_result(source, target)
     }
@@ -59,28 +59,24 @@ impl<G: Graph> State<G> {
     }
 
     fn process_buckets(&mut self, target: G::Node) {
-        while let Some((bucket_id, bucket)) = self.buckets.pop_first() {
-            self.process_next_bucket(bucket_id, bucket);
+        while let Some((_bucket_id, bucket)) = self.buckets.pop_first() {
+            self.process_next_bucket(bucket);
             if self.costs.contains_key(&target) {
                 return;
             }
         }
     }
 
-    fn process_next_bucket(&mut self, bucket_id: usize, mut bucket: BTreeSet<G::Node>) {
+    fn process_next_bucket(&mut self, mut bucket: BTreeSet<G::Node>) {
         loop {
-            bucket = self.process_bucket(bucket_id, bucket);
+            bucket = self.process_bucket(bucket);
             if bucket.is_empty() {
                 break;
             }
         }
     }
 
-    fn process_bucket(
-        &mut self,
-        current_bucket_id: usize,
-        current_bucket: BTreeSet<G::Node>,
-    ) -> BTreeSet<G::Node> {
+    fn process_bucket(&mut self, current_bucket: BTreeSet<G::Node>) -> BTreeSet<G::Node> {
         let results = current_bucket
             .into_par_iter()
             .map(|node| self.process_neighbors(&node))
@@ -90,19 +86,29 @@ impl<G: Graph> State<G> {
 
         for result in results.into_iter().flatten().flatten() {
             for neighbor in result.same_bucket_neighbors {
-                self.update_neighbor(&mut pending_bucket, current_bucket_id, &neighbor);
+                self.update_same_bucket_neighor(&mut pending_bucket, &neighbor);
+            }
+
+            for neighbor in result.future_buckets_neighbors {
+                self.update_future_bucket_neighor(&neighbor);
             }
         }
 
         pending_bucket
     }
 
-    fn update_neighbor(
+    fn update_same_bucket_neighor(
         &mut self,
         pending_bucket: &mut BTreeSet<G::Node>,
-        current_bucket_id: usize,
         neighbor: &Neighbor<G>,
     ) {
+        let new_cost = self.update_neighbor_cost(neighbor);
+        if new_cost {
+            pending_bucket.insert(neighbor.node);
+        }
+    }
+
+    fn update_future_bucket_neighor(&mut self, neighbor: &Neighbor<G>) {
         let new_cost = self.update_neighbor_cost(neighbor);
         if new_cost {
             self.predecessors
@@ -110,14 +116,8 @@ impl<G: Graph> State<G> {
 
             let bucket_id = G::floor_cost(neighbor.total_cost / self.delta);
 
-            debug_assert!(bucket_id >= current_bucket_id);
-
-            if bucket_id == current_bucket_id {
-                pending_bucket.insert(neighbor.node);
-            } else {
-                let bucket = self.buckets.entry(bucket_id).or_default();
-                bucket.insert(neighbor.node);
-            }
+            let bucket = self.buckets.entry(bucket_id).or_default();
+            bucket.insert(neighbor.node);
         }
     }
 
