@@ -189,13 +189,13 @@ impl Graph {
                     Arc::new(Mutex::new(vec![]));
 
                 current_bucket.par_iter().for_each(|&vertex| {
-                    let vertex_dist = distances[&vertex];
+                    let vertex_distance = distances[&vertex];
                     if let Some(neighbors) = self.adjacency.get(&vertex) {
                         let mut local_requests = vec![];
                         for (&neighbor, &weight) in neighbors {
                             if weight <= delta {
-                                let new_dist = vertex_dist + weight;
-                                local_requests.push((neighbor, new_dist, vertex));
+                                let new_distance = vertex_distance + weight;
+                                local_requests.push((neighbor, new_distance, vertex));
                             }
                         }
                         if !local_requests.is_empty() {
@@ -210,7 +210,8 @@ impl Graph {
                 let mut new_vertices_for_current = vec![];
 
                 for &(neighbor, new_distance, predecessor) in requests.iter() {
-                    let current_distance = distances.get(&neighbor).copied().unwrap_or(Cost::INFINITY);
+                    let current_distance =
+                        distances.get(&neighbor).copied().unwrap_or(Cost::INFINITY);
                     if new_distance < current_distance {
                         distances.insert(neighbor, new_distance);
                         predecessors.insert(neighbor, predecessor);
@@ -262,13 +263,13 @@ impl Graph {
 
             // Apply heavy edge updates
             let requests = heavy_requests.lock().unwrap();
-            for &(neighbor, new_dist, predecessor) in requests.iter() {
-                let current_dist = distances.get(&neighbor).copied().unwrap_or(Cost::INFINITY);
-                if new_dist < current_dist {
-                    distances.insert(neighbor, new_dist);
+            for &(neighbor, new_distance, predecessor) in requests.iter() {
+                let current_distance = distances.get(&neighbor).copied().unwrap_or(Cost::INFINITY);
+                if new_distance < current_distance {
+                    distances.insert(neighbor, new_distance);
                     predecessors.insert(neighbor, predecessor);
 
-                    let bucket_idx = (new_dist / delta).floor() as usize;
+                    let bucket_idx = (new_distance / delta).floor() as usize;
 
                     // Ensure we have enough buckets
                     while buckets.len() <= bucket_idx {

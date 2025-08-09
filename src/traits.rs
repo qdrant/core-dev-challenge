@@ -1,0 +1,25 @@
+use std::ops::{Add, Div};
+
+pub trait Graph: Sized + Send + Sync {
+    type Node: Send + Sync + Copy + Ord;
+    type Cost: Send
+        + Sync
+        + Copy
+        + Default
+        + PartialOrd
+        + Add<Output = Self::Cost>
+        + Div<Output = Self::Cost>;
+
+    fn get_neighbors(&self, node: &Self::Node) -> Option<&[(Self::Node, Self::Cost)]>;
+
+    fn floor_cost(cost: Self::Cost) -> usize;
+}
+
+pub type NodeOf<G> = <G as Graph>::Node;
+pub type CostOf<G> = <G as Graph>::Cost;
+
+pub trait HasGraph {
+    type Graph: Graph;
+
+    fn graph(&self) -> &Self::Graph;
+}
