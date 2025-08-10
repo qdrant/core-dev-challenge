@@ -1,6 +1,9 @@
 use num_traits::Zero;
 use rayon::prelude::*;
-use std::collections::{BTreeMap, BTreeSet, VecDeque};
+use std::{
+    collections::{BTreeMap, BTreeSet, VecDeque},
+    sync::{Arc, RwLock},
+};
 
 use crate::traits::Graph;
 
@@ -27,7 +30,7 @@ impl<G: Graph> CanComputeParallelShortestPath for G {
 struct State<'a, G: Graph> {
     graph: &'a G,
     delta: G::Cost,
-    lowest_costs: BTreeMap<G::Node, LowestCost<G>>,
+    lowest_costs: Arc<RwLock<BTreeMap<G::Node, LowestCost<G>>>>,
     buckets: BTreeMap<usize, BTreeSet<G::Node>>,
 }
 
@@ -70,14 +73,14 @@ impl<'a, G: Graph> State<'a, G> {
         let mut state = Self {
             graph,
             delta,
-            lowest_costs: BTreeMap::from([(
+            lowest_costs: Arc::new(RwLock::new(BTreeMap::from([(
                 source,
                 LowestCost {
                     cost: G::Cost::zero(),
                     predecessor: source,
                     is_tentative: false,
                 },
-            )]),
+            )]))),
             buckets: BTreeMap::new(),
         };
 
@@ -87,15 +90,16 @@ impl<'a, G: Graph> State<'a, G> {
     }
 
     fn retrieve_result(
-        &mut self,
+        &self,
         source: G::Node,
         target: G::Node,
     ) -> Option<(VecDeque<G::Node>, G::Cost)> {
-        let cost = self.lowest_costs.get(&target)?;
+        let lowest_costs = self.lowest_costs.read().unwrap();
+        let cost = lowest_costs.get(&target)?;
         let mut path = VecDeque::from([target]);
 
         let mut current = target;
-        while let Some(cost) = self.lowest_costs.get(&current) {
+        while let Some(cost) = lowest_costs.get(&current) {
             let predecessor = cost.predecessor;
             path.push_front(predecessor);
             if predecessor == source {
@@ -117,7 +121,9 @@ impl<'a, G: Graph> State<'a, G> {
             current_bucket_id = bucket_id;
 
             self.process_next_bucket(bucket);
-            if let Some(cost) = self.lowest_costs.get(&target)
+
+            let lowest_costs = self.lowest_costs.read().unwrap();
+            if let Some(cost) = lowest_costs.get(&target)
                 && !cost.is_tentative
             {
                 return;
@@ -175,8 +181,9 @@ impl<'a, G: Graph> State<'a, G> {
         }
     }
 
-    fn update_neighbor_cost(&mut self, neighbor: &Edge<G>, is_tentative: bool) -> bool {
-        if let Some(current_cost) = self.lowest_costs.get_mut(&neighbor.target) {
+    fn update_neighbor_cost(&self, neighbor: &Edge<G>, is_tentative: bool) -> bool {
+        let mut lowest_costs = self.lowest_costs.write().unwrap();
+        if let Some(current_cost) = lowest_costs.get_mut(&neighbor.target) {
             if neighbor.total_cost < current_cost.cost {
                 *current_cost = LowestCost {
                     cost: neighbor.total_cost,
@@ -188,7 +195,7 @@ impl<'a, G: Graph> State<'a, G> {
                 false
             }
         } else {
-            self.lowest_costs.insert(
+            lowest_costs.insert(
                 neighbor.target,
                 LowestCost {
                     cost: neighbor.total_cost,
@@ -201,7 +208,10 @@ impl<'a, G: Graph> State<'a, G> {
     }
 
     fn process_neighbors(&self, node: &G::Node) -> Option<BucketResult<G>> {
-        let current_cost = self.lowest_costs.get(node).cloned().unwrap();
+        let current_cost = {
+            let lowest_costs = self.lowest_costs.read().unwrap();
+            lowest_costs.get(node).cloned().unwrap()
+        };
 
         if let Some(neighbors) = self.graph.get_neighbors(node) {
             let (same_bucket_neighbors, future_buckets_neighbors) = neighbors
