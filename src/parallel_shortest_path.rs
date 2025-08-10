@@ -44,7 +44,6 @@ struct Edge<G: Graph> {
 struct LowestCost<G: Graph> {
     cost: G::Cost,
     predecessor: G::Node,
-    is_tentative: bool,
 }
 
 impl<G: Graph> Clone for LowestCost<G> {
@@ -52,7 +51,6 @@ impl<G: Graph> Clone for LowestCost<G> {
         Self {
             cost: self.cost,
             predecessor: self.predecessor,
-            is_tentative: self.is_tentative,
         }
     }
 }
@@ -72,7 +70,6 @@ impl<'a, G: Graph> State<'a, G> {
                 LowestCost {
                     cost: G::Cost::zero(),
                     predecessor: source,
-                    is_tentative: false,
                 },
             )]),
             buckets: BTreeMap::new(),
@@ -115,9 +112,7 @@ impl<'a, G: Graph> State<'a, G> {
 
             self.process_next_bucket(bucket);
 
-            if let Some(cost) = self.lowest_costs.get(&target)
-                && !cost.is_tentative
-            {
+            if self.lowest_costs.contains_key(&target) {
                 return;
             }
         }
@@ -174,14 +169,14 @@ impl<'a, G: Graph> State<'a, G> {
         pending_bucket: &mut Vec<G::Node>,
         neighbor: &Edge<G>,
     ) {
-        let new_cost = self.update_neighbor_cost(neighbor, false);
+        let new_cost = self.update_neighbor_cost(neighbor);
         if new_cost {
             pending_bucket.push(neighbor.target);
         }
     }
 
     fn update_future_bucket_neighbor(&mut self, neighbor: &Edge<G>) {
-        let new_cost = self.update_neighbor_cost(neighbor, true);
+        let new_cost = self.update_neighbor_cost(neighbor);
         if new_cost {
             let bucket_id = G::floor_cost(neighbor.total_cost / self.delta);
             let bucket = self.buckets.entry(bucket_id).or_default();
@@ -189,13 +184,12 @@ impl<'a, G: Graph> State<'a, G> {
         }
     }
 
-    fn update_neighbor_cost(&mut self, neighbor: &Edge<G>, is_tentative: bool) -> bool {
+    fn update_neighbor_cost(&mut self, neighbor: &Edge<G>) -> bool {
         if let Some(current_cost) = self.lowest_costs.get_mut(&neighbor.target) {
             if neighbor.total_cost < current_cost.cost {
                 *current_cost = LowestCost {
                     cost: neighbor.total_cost,
                     predecessor: neighbor.source,
-                    is_tentative,
                 };
                 true
             } else {
@@ -207,7 +201,6 @@ impl<'a, G: Graph> State<'a, G> {
                 LowestCost {
                     cost: neighbor.total_cost,
                     predecessor: neighbor.source,
-                    is_tentative,
                 },
             );
             true
