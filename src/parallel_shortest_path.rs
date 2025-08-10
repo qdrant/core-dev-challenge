@@ -38,13 +38,7 @@ struct State<'a, G: Graph> {
 struct Edge<G: Graph> {
     source: G::Node,
     target: G::Node,
-    cost: G::Cost,
     total_cost: G::Cost,
-}
-
-struct BucketResult<G: Graph> {
-    same_bucket_neighbors: Vec<Edge<G>>,
-    future_buckets_neighbors: Vec<Edge<G>>,
 }
 
 struct LowestCost<G: Graph> {
@@ -149,24 +143,13 @@ impl<'a, G: Graph> State<'a, G> {
     }
 
     fn process_bucket(&self, current_bucket: BTreeSet<G::Node>) -> BTreeSet<G::Node> {
-        let results = current_bucket
+        let pending_bucket = Arc::new(Mutex::new(BTreeSet::new()));
+
+        current_bucket
             .into_par_iter()
-            .map(|node| self.process_neighbors(&node))
-            .collect::<Vec<_>>();
+            .for_each(|node| self.process_neighbors(pending_bucket.clone(), &node));
 
-        let mut pending_bucket = BTreeSet::new();
-
-        for result in results.iter().flatten() {
-            for neighbor in result.same_bucket_neighbors.iter() {
-                self.update_same_bucket_neighbor(&mut pending_bucket, neighbor);
-            }
-
-            for neighbor in result.future_buckets_neighbors.iter() {
-                self.update_future_bucket_neighbor(neighbor);
-            }
-        }
-
-        pending_bucket
+        core::mem::take(&mut *pending_bucket.lock().unwrap())
     }
 
     fn update_same_bucket_neighbor(
@@ -219,28 +202,26 @@ impl<'a, G: Graph> State<'a, G> {
         }
     }
 
-    fn process_neighbors(&self, node: &G::Node) -> Option<BucketResult<G>> {
+    fn process_neighbors(&self, pending_bucket: Arc<Mutex<BTreeSet<G::Node>>>, node: &G::Node) {
         let current_cost = {
             let lowest_costs = self.lowest_costs.read().unwrap();
             lowest_costs.get(node).cloned().unwrap()
         };
 
         if let Some(neighbors) = self.graph.get_neighbors(node) {
-            let (same_bucket_neighbors, future_buckets_neighbors) = neighbors
-                .map(|(neighbor, cost)| Edge::<G> {
+            for (neighbor, cost) in neighbors {
+                let edge = Edge::<G> {
                     source: *node,
                     target: neighbor,
-                    cost: cost,
                     total_cost: current_cost.cost + cost,
-                })
-                .partition::<Vec<_>, _>(|neighbor| neighbor.cost <= self.delta);
+                };
 
-            Some(BucketResult {
-                same_bucket_neighbors,
-                future_buckets_neighbors,
-            })
-        } else {
-            None
+                if cost <= self.delta {
+                    self.update_same_bucket_neighbor(&mut pending_bucket.lock().unwrap(), &edge);
+                } else {
+                    self.update_future_bucket_neighbor(&edge)
+                }
+            }
         }
     }
 }
