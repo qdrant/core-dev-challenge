@@ -163,9 +163,16 @@ impl<'a, G: Graph> State<'a, G> {
     }
 
     fn process_bucket_future_neighbors(&self, current_bucket_acc: HashSet<G::Node>) {
+        let delta = self.delta;
+        let sink = Arc::new(Mutex::new(Vec::new()));
+
         current_bucket_acc
-            .into_par_iter()
-            .for_each(|node| self.process_future_neighbors(&node));
+            .par_iter()
+            .for_each(|node| self.get_neighbors(node, sink.clone(), |cost| cost > delta));
+
+        for edge in sink.lock().unwrap().drain(..) {
+            self.update_future_bucket_neighbor(&edge);
+        }
     }
 
     fn update_same_bucket_neighbor(
@@ -248,19 +255,5 @@ impl<'a, G: Graph> State<'a, G> {
             let lowest_costs = self.lowest_costs.read().unwrap();
             lowest_costs.get(node).cloned().unwrap()
         };
-
-        if let Some(neighbors) = self.graph.get_neighbors(node) {
-            for (neighbor, cost) in neighbors {
-                if cost > self.delta {
-                    let edge = Edge::<G> {
-                        source: *node,
-                        target: neighbor,
-                        total_cost: current_cost.cost + cost,
-                    };
-
-                    self.update_future_bucket_neighbor(&edge);
-                }
-            }
-        }
     }
 }
