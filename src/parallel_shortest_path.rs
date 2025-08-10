@@ -135,7 +135,7 @@ impl<'a, G: Graph> State<'a, G> {
 
     fn process_next_bucket(&self, mut bucket: HashSet<G::Node>) {
         loop {
-            let new_nodes = self.process_bucket(&bucket);
+            let new_nodes = self.process_current_bucket(&bucket);
             if new_nodes.is_empty() {
                 break;
             } else {
@@ -146,14 +146,20 @@ impl<'a, G: Graph> State<'a, G> {
         self.process_bucket_future_neighbors(bucket);
     }
 
-    fn process_bucket(&self, current_bucket: &HashSet<G::Node>) -> HashSet<G::Node> {
-        let pending_bucket = Arc::new(Mutex::new(HashSet::new()));
+    fn process_current_bucket(&self, current_bucket: &HashSet<G::Node>) -> HashSet<G::Node> {
+        let delta = self.delta;
+        let sink = Arc::new(Mutex::new(Vec::new()));
 
         current_bucket
             .par_iter()
-            .for_each(|node| self.process_neighbors(pending_bucket.clone(), node));
+            .for_each(|node| self.get_neighbors(node, sink.clone(), |cost| cost <= delta));
 
-        core::mem::take(&mut *pending_bucket.lock().unwrap())
+        let mut pending_bucket = HashSet::new();
+        for edge in sink.lock().unwrap().drain(..) {
+            self.update_same_bucket_neighbor(&mut pending_bucket, &edge);
+        }
+
+        pending_bucket
     }
 
     fn process_bucket_future_neighbors(&self, current_bucket_acc: HashSet<G::Node>) {
@@ -212,23 +218,26 @@ impl<'a, G: Graph> State<'a, G> {
         }
     }
 
-    fn process_neighbors(&self, pending_bucket: Arc<Mutex<HashSet<G::Node>>>, node: &G::Node) {
+    fn get_neighbors(
+        &self,
+        node: &G::Node,
+        sink: Arc<Mutex<Vec<Edge<G>>>>,
+        filter: impl Fn(G::Cost) -> bool,
+    ) {
         let current_cost = {
             let lowest_costs = self.lowest_costs.read().unwrap();
             lowest_costs.get(node).cloned().unwrap()
         };
 
         if let Some(neighbors) = self.graph.get_neighbors(node) {
-            let mut pending_bucket = pending_bucket.lock().unwrap();
+            let mut sink = sink.lock().unwrap();
             for (neighbor, cost) in neighbors {
-                if cost <= self.delta {
-                    let edge = Edge::<G> {
+                if filter(cost) {
+                    sink.push(Edge {
                         source: *node,
                         target: neighbor,
                         total_cost: current_cost.cost + cost,
-                    };
-
-                    self.update_same_bucket_neighbor(&mut pending_bucket, &edge);
+                    });
                 }
             }
         }

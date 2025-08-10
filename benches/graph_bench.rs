@@ -5,7 +5,7 @@ const MAX: u64 = 1280000;
 const DELTA: f64 = 1.0;
 
 fn random_graph() -> Graph {
-    Graph::random_connected_graph(MAX, MAX * 2, 1.0, 30.0)
+    Graph::random_connected_graph(MAX, MAX * 2, 1.0, 50.0)
 }
 
 fn bench_shortest_path(c: &mut Criterion) {
