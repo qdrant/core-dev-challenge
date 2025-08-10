@@ -1,5 +1,5 @@
 use num_traits::Zero;
-use rayon::prelude::*;
+use rayon::{join, prelude::*};
 use std::{
     collections::{BTreeMap, BTreeSet, VecDeque},
     sync::{Arc, Mutex, RwLock},
@@ -220,16 +220,20 @@ impl<'a, G: Graph> State<'a, G> {
                 })
                 .partition::<Vec<_>, _>(|edge| edge.cost <= self.delta);
 
-            {
+            let task_a = || {
                 let mut pending_bucket = pending_bucket.lock().unwrap();
                 for edge in current_neighbors {
                     self.update_same_bucket_neighbor(&mut pending_bucket, &edge);
                 }
-            }
+            };
 
-            for edge in future_neighbors {
-                self.update_future_bucket_neighbor(&edge);
-            }
+            let task_b = || {
+                for edge in future_neighbors {
+                    self.update_future_bucket_neighbor(&edge);
+                }
+            };
+
+            join(task_a, task_b);
         }
     }
 }
