@@ -2,7 +2,7 @@ use num_traits::Zero;
 use rayon::prelude::*;
 use std::{
     collections::{BTreeMap, HashMap, HashSet, VecDeque},
-    sync::{Arc, Mutex, RwLock},
+    sync::{Arc, Mutex},
 };
 
 use crate::traits::Graph;
@@ -30,8 +30,8 @@ impl<G: Graph> CanComputeParallelShortestPath for G {
 struct State<'a, G: Graph> {
     graph: &'a G,
     delta: G::Cost,
-    lowest_costs: Arc<RwLock<HashMap<G::Node, LowestCost<G>>>>,
-    buckets: Arc<RwLock<BTreeMap<usize, Arc<Mutex<HashSet<G::Node>>>>>>,
+    lowest_costs: HashMap<G::Node, LowestCost<G>>,
+    buckets: BTreeMap<usize, HashSet<G::Node>>,
 }
 
 #[derive(Debug)]
@@ -64,18 +64,18 @@ impl<'a, G: Graph> State<'a, G> {
         target: G::Node,
         delta: G::Cost,
     ) -> Option<(VecDeque<G::Node>, G::Cost)> {
-        let state = Self {
+        let mut state = Self {
             graph,
             delta,
-            lowest_costs: Arc::new(RwLock::new(HashMap::from([(
+            lowest_costs: HashMap::from([(
                 source,
                 LowestCost {
                     cost: G::Cost::zero(),
                     predecessor: source,
                     is_tentative: false,
                 },
-            )]))),
-            buckets: Arc::new(RwLock::new(BTreeMap::new())),
+            )]),
+            buckets: BTreeMap::new(),
         };
 
         state.process_next_bucket(HashSet::from([source]));
@@ -88,12 +88,11 @@ impl<'a, G: Graph> State<'a, G> {
         source: G::Node,
         target: G::Node,
     ) -> Option<(VecDeque<G::Node>, G::Cost)> {
-        let lowest_costs = self.lowest_costs.read().unwrap();
-        let cost = lowest_costs.get(&target)?;
+        let cost = self.lowest_costs.get(&target)?;
         let mut path = VecDeque::from([target]);
 
         let mut current = target;
-        while let Some(cost) = lowest_costs.get(&current) {
+        while let Some(cost) = self.lowest_costs.get(&current) {
             let predecessor = cost.predecessor;
             path.push_front(predecessor);
             if predecessor == source {
@@ -108,7 +107,7 @@ impl<'a, G: Graph> State<'a, G> {
         Some((path, cost.cost))
     }
 
-    fn process_buckets(&self, target: G::Node) {
+    fn process_buckets(&mut self, target: G::Node) {
         let mut current_bucket_id = 0;
         while let Some((bucket_id, bucket)) = self.pop_next_bucket() {
             debug_assert!(bucket_id > current_bucket_id);
@@ -116,8 +115,7 @@ impl<'a, G: Graph> State<'a, G> {
 
             self.process_next_bucket(bucket);
 
-            let lowest_costs = self.lowest_costs.read().unwrap();
-            if let Some(cost) = lowest_costs.get(&target)
+            if let Some(cost) = self.lowest_costs.get(&target)
                 && !cost.is_tentative
             {
                 return;
@@ -125,15 +123,11 @@ impl<'a, G: Graph> State<'a, G> {
         }
     }
 
-    fn pop_next_bucket(&self) -> Option<(usize, HashSet<G::Node>)> {
-        let mut buckets = self.buckets.write().unwrap();
-        let (bucket_id, bucket) = buckets.pop_first()?;
-        let mut bucket = bucket.lock().unwrap();
-        let bucket = core::mem::take(&mut *bucket);
-        Some((bucket_id, bucket))
+    fn pop_next_bucket(&mut self) -> Option<(usize, HashSet<G::Node>)> {
+        self.buckets.pop_first()
     }
 
-    fn process_next_bucket(&self, mut bucket: HashSet<G::Node>) {
+    fn process_next_bucket(&mut self, mut bucket: HashSet<G::Node>) {
         loop {
             let new_nodes = self.process_current_bucket(&bucket);
             if new_nodes.is_empty() {
@@ -146,7 +140,7 @@ impl<'a, G: Graph> State<'a, G> {
         self.process_bucket_future_neighbors(bucket);
     }
 
-    fn process_current_bucket(&self, current_bucket: &HashSet<G::Node>) -> HashSet<G::Node> {
+    fn process_current_bucket(&mut self, current_bucket: &HashSet<G::Node>) -> HashSet<G::Node> {
         let delta = self.delta;
         let sink = Arc::new(Mutex::new(Vec::new()));
 
@@ -162,7 +156,7 @@ impl<'a, G: Graph> State<'a, G> {
         pending_bucket
     }
 
-    fn process_bucket_future_neighbors(&self, current_bucket_acc: HashSet<G::Node>) {
+    fn process_bucket_future_neighbors(&mut self, current_bucket_acc: HashSet<G::Node>) {
         let delta = self.delta;
         let sink = Arc::new(Mutex::new(Vec::new()));
 
@@ -176,7 +170,7 @@ impl<'a, G: Graph> State<'a, G> {
     }
 
     fn update_same_bucket_neighbor(
-        &self,
+        &mut self,
         pending_bucket: &mut HashSet<G::Node>,
         neighbor: &Edge<G>,
     ) {
@@ -186,22 +180,17 @@ impl<'a, G: Graph> State<'a, G> {
         }
     }
 
-    fn update_future_bucket_neighbor(&self, neighbor: &Edge<G>) {
+    fn update_future_bucket_neighbor(&mut self, neighbor: &Edge<G>) {
         let new_cost = self.update_neighbor_cost(neighbor, true);
         if new_cost {
             let bucket_id = G::floor_cost(neighbor.total_cost / self.delta);
-            let bucket = {
-                let mut buckets = self.buckets.write().unwrap();
-                buckets.entry(bucket_id).or_default().clone()
-            };
-            let mut bucket = bucket.lock().unwrap();
+            let bucket = self.buckets.entry(bucket_id).or_default();
             bucket.insert(neighbor.target);
         }
     }
 
-    fn update_neighbor_cost(&self, neighbor: &Edge<G>, is_tentative: bool) -> bool {
-        let mut lowest_costs = self.lowest_costs.write().unwrap();
-        if let Some(current_cost) = lowest_costs.get_mut(&neighbor.target) {
+    fn update_neighbor_cost(&mut self, neighbor: &Edge<G>, is_tentative: bool) -> bool {
+        if let Some(current_cost) = self.lowest_costs.get_mut(&neighbor.target) {
             if neighbor.total_cost < current_cost.cost {
                 *current_cost = LowestCost {
                     cost: neighbor.total_cost,
@@ -213,7 +202,7 @@ impl<'a, G: Graph> State<'a, G> {
                 false
             }
         } else {
-            lowest_costs.insert(
+            self.lowest_costs.insert(
                 neighbor.target,
                 LowestCost {
                     cost: neighbor.total_cost,
@@ -231,10 +220,7 @@ impl<'a, G: Graph> State<'a, G> {
         sink: Arc<Mutex<Vec<Edge<G>>>>,
         filter: impl Fn(G::Cost) -> bool,
     ) {
-        let current_cost = {
-            let lowest_costs = self.lowest_costs.read().unwrap();
-            lowest_costs.get(node).cloned().unwrap()
-        };
+        let current_cost = self.lowest_costs.get(node).unwrap();
 
         if let Some(neighbors) = self.graph.get_neighbors(node) {
             let mut sink = sink.lock().unwrap();
@@ -248,12 +234,5 @@ impl<'a, G: Graph> State<'a, G> {
                 }
             }
         }
-    }
-
-    fn process_future_neighbors(&self, node: &G::Node) {
-        let current_cost = {
-            let lowest_costs = self.lowest_costs.read().unwrap();
-            lowest_costs.get(node).cloned().unwrap()
-        };
     }
 }
