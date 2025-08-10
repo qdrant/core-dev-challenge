@@ -4,10 +4,11 @@ use core::ops::{Add, Div};
 use num_traits::Float;
 
 pub trait Graph: Sized + Send + Sync + Debug {
-    type Node: Send + Sync + Copy + Debug + Ord;
+    type Node: Send + Sync + Copy + Clone + Debug + Ord;
     type Cost: Send
         + Sync
         + Copy
+        + Clone
         + Debug
         + Float
         + Default

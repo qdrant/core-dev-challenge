@@ -47,10 +47,12 @@ fn bench_graph_generation(c: &mut Criterion) {
 }
 
 criterion_group!(
-    benches,
-    // bench_graph_generation,
-    bench_parallel_shortest_path,
-    bench_naive_parallel_shortest_path,
-    bench_shortest_path,
+    name = benches;
+    config = Criterion::default().significance_level(0.1).sample_size(10);
+    targets =
+        // bench_graph_generation,
+        bench_parallel_shortest_path,
+        bench_naive_parallel_shortest_path,
+        bench_shortest_path,
 );
 criterion_main!(benches);
