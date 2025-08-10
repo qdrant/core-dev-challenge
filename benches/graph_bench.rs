@@ -1,11 +1,11 @@
 use criterion::{Criterion, criterion_group, criterion_main};
 use graph_challenge::{graph::Graph, parallel_shortest_path::CanComputeParallelShortestPath};
 
-const MAX: u64 = 10000;
+const MAX: u64 = 1280000;
 const DELTA: f64 = 1.0;
 
 fn random_graph() -> Graph {
-    Graph::random_connected_graph(MAX, MAX * 200, 1.0, 20.0)
+    Graph::random_connected_graph(MAX, MAX * 2, 1.0, 30.0)
 }
 
 fn bench_shortest_path(c: &mut Criterion) {
@@ -38,7 +38,7 @@ fn bench_naive_parallel_shortest_path(c: &mut Criterion) {
     );
 }
 
-fn bench_graph_generation(c: &mut Criterion) {
+pub fn bench_graph_generation(c: &mut Criterion) {
     c.bench_function("generate random connected graph", |b| {
         b.iter(|| {
             random_graph();
