@@ -38,6 +38,7 @@ struct State<'a, G: Graph> {
 struct Edge<G: Graph> {
     source: G::Node,
     target: G::Node,
+    cost: G::Cost,
     total_cost: G::Cost,
 }
 
@@ -209,18 +210,25 @@ impl<'a, G: Graph> State<'a, G> {
         };
 
         if let Some(neighbors) = self.graph.get_neighbors(node) {
-            for (neighbor, cost) in neighbors {
-                let edge = Edge::<G> {
+            let (current_neighbors, future_neighbors) = neighbors
+                .into_iter()
+                .map(|(neighbor, cost)| Edge::<G> {
                     source: *node,
                     target: neighbor,
+                    cost: cost,
                     total_cost: current_cost.cost + cost,
-                };
+                })
+                .partition::<Vec<_>, _>(|edge| edge.cost <= self.delta);
 
-                if cost <= self.delta {
-                    self.update_same_bucket_neighbor(&mut pending_bucket.lock().unwrap(), &edge);
-                } else {
-                    self.update_future_bucket_neighbor(&edge)
+            {
+                let mut pending_bucket = pending_bucket.lock().unwrap();
+                for edge in current_neighbors {
+                    self.update_same_bucket_neighbor(&mut pending_bucket, &edge);
                 }
+            }
+
+            for edge in future_neighbors {
+                self.update_future_bucket_neighbor(&edge);
             }
         }
     }
