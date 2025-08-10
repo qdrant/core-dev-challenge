@@ -1,7 +1,7 @@
 use num_traits::Zero;
 use rayon::{join, prelude::*};
 use std::{
-    collections::{BTreeMap, BTreeSet, VecDeque},
+    collections::{BTreeMap, HashMap, HashSet, VecDeque},
     sync::{Arc, Mutex, RwLock},
 };
 
@@ -30,8 +30,8 @@ impl<G: Graph> CanComputeParallelShortestPath for G {
 struct State<'a, G: Graph> {
     graph: &'a G,
     delta: G::Cost,
-    lowest_costs: Arc<RwLock<BTreeMap<G::Node, LowestCost<G>>>>,
-    buckets: Arc<RwLock<BTreeMap<usize, Arc<Mutex<BTreeSet<G::Node>>>>>>,
+    lowest_costs: Arc<RwLock<HashMap<G::Node, LowestCost<G>>>>,
+    buckets: Arc<RwLock<BTreeMap<usize, Arc<Mutex<HashSet<G::Node>>>>>>,
 }
 
 #[derive(Debug)]
@@ -68,7 +68,7 @@ impl<'a, G: Graph> State<'a, G> {
         let state = Self {
             graph,
             delta,
-            lowest_costs: Arc::new(RwLock::new(BTreeMap::from([(
+            lowest_costs: Arc::new(RwLock::new(HashMap::from([(
                 source,
                 LowestCost {
                     cost: G::Cost::zero(),
@@ -79,7 +79,7 @@ impl<'a, G: Graph> State<'a, G> {
             buckets: Arc::new(RwLock::new(BTreeMap::new())),
         };
 
-        state.process_next_bucket(BTreeSet::from([source]));
+        state.process_next_bucket(HashSet::from([source]));
         state.process_buckets(target);
         state.retrieve_result(source, target)
     }
@@ -126,7 +126,7 @@ impl<'a, G: Graph> State<'a, G> {
         }
     }
 
-    fn pop_next_bucket(&self) -> Option<(usize, BTreeSet<G::Node>)> {
+    fn pop_next_bucket(&self) -> Option<(usize, HashSet<G::Node>)> {
         let mut buckets = self.buckets.write().unwrap();
         let (bucket_id, bucket) = buckets.pop_first()?;
         let mut bucket = bucket.lock().unwrap();
@@ -134,7 +134,7 @@ impl<'a, G: Graph> State<'a, G> {
         Some((bucket_id, bucket))
     }
 
-    fn process_next_bucket(&self, mut bucket: BTreeSet<G::Node>) {
+    fn process_next_bucket(&self, mut bucket: HashSet<G::Node>) {
         loop {
             bucket = self.process_bucket(bucket);
             if bucket.is_empty() {
@@ -143,8 +143,8 @@ impl<'a, G: Graph> State<'a, G> {
         }
     }
 
-    fn process_bucket(&self, current_bucket: BTreeSet<G::Node>) -> BTreeSet<G::Node> {
-        let pending_bucket = Arc::new(Mutex::new(BTreeSet::new()));
+    fn process_bucket(&self, current_bucket: HashSet<G::Node>) -> HashSet<G::Node> {
+        let pending_bucket = Arc::new(Mutex::new(HashSet::new()));
 
         current_bucket
             .into_par_iter()
@@ -155,7 +155,7 @@ impl<'a, G: Graph> State<'a, G> {
 
     fn update_same_bucket_neighbor(
         &self,
-        pending_bucket: &mut BTreeSet<G::Node>,
+        pending_bucket: &mut HashSet<G::Node>,
         neighbor: &Edge<G>,
     ) {
         let new_cost = self.update_neighbor_cost(neighbor, false);
@@ -203,7 +203,7 @@ impl<'a, G: Graph> State<'a, G> {
         }
     }
 
-    fn process_neighbors(&self, pending_bucket: Arc<Mutex<BTreeSet<G::Node>>>, node: &G::Node) {
+    fn process_neighbors(&self, pending_bucket: Arc<Mutex<HashSet<G::Node>>>, node: &G::Node) {
         let current_cost = {
             let lowest_costs = self.lowest_costs.read().unwrap();
             lowest_costs.get(node).cloned().unwrap()

@@ -1,10 +1,11 @@
 use core::fmt::Debug;
+use core::hash::Hash;
 use core::ops::{Add, Div};
 
 use num_traits::Float;
 
 pub trait Graph: Sized + Send + Sync + Debug {
-    type Node: Send + Sync + Copy + Clone + Debug + Ord;
+    type Node: Send + Sync + Copy + Clone + Debug + Ord + Hash;
     type Cost: Send
         + Sync
         + Copy
