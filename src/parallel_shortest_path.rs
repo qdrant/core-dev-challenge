@@ -2,7 +2,7 @@ use num_traits::Zero;
 use rayon::prelude::*;
 use std::{
     collections::{BTreeMap, BTreeSet, VecDeque},
-    sync::{Arc, RwLock},
+    sync::{Arc, Mutex, RwLock},
 };
 
 use crate::traits::Graph;
@@ -31,7 +31,7 @@ struct State<'a, G: Graph> {
     graph: &'a G,
     delta: G::Cost,
     lowest_costs: Arc<RwLock<BTreeMap<G::Node, LowestCost<G>>>>,
-    buckets: BTreeMap<usize, BTreeSet<G::Node>>,
+    buckets: Arc<RwLock<BTreeMap<usize, Arc<Mutex<BTreeSet<G::Node>>>>>>,
 }
 
 #[derive(Debug)]
@@ -70,7 +70,7 @@ impl<'a, G: Graph> State<'a, G> {
         target: G::Node,
         delta: G::Cost,
     ) -> Option<(VecDeque<G::Node>, G::Cost)> {
-        let mut state = Self {
+        let state = Self {
             graph,
             delta,
             lowest_costs: Arc::new(RwLock::new(BTreeMap::from([(
@@ -81,7 +81,7 @@ impl<'a, G: Graph> State<'a, G> {
                     is_tentative: false,
                 },
             )]))),
-            buckets: BTreeMap::new(),
+            buckets: Arc::new(RwLock::new(BTreeMap::new())),
         };
 
         state.process_next_bucket(BTreeSet::from([source]));
@@ -114,9 +114,9 @@ impl<'a, G: Graph> State<'a, G> {
         Some((path, cost.cost))
     }
 
-    fn process_buckets(&mut self, target: G::Node) {
+    fn process_buckets(&self, target: G::Node) {
         let mut current_bucket_id = 0;
-        while let Some((bucket_id, bucket)) = self.buckets.pop_first() {
+        while let Some((bucket_id, bucket)) = self.pop_next_bucket() {
             debug_assert!(bucket_id > current_bucket_id);
             current_bucket_id = bucket_id;
 
@@ -131,7 +131,15 @@ impl<'a, G: Graph> State<'a, G> {
         }
     }
 
-    fn process_next_bucket(&mut self, mut bucket: BTreeSet<G::Node>) {
+    fn pop_next_bucket(&self) -> Option<(usize, BTreeSet<G::Node>)> {
+        let mut buckets = self.buckets.write().unwrap();
+        let (bucket_id, bucket) = buckets.pop_first()?;
+        let mut bucket = bucket.lock().unwrap();
+        let bucket = core::mem::take(&mut *bucket);
+        Some((bucket_id, bucket))
+    }
+
+    fn process_next_bucket(&self, mut bucket: BTreeSet<G::Node>) {
         loop {
             bucket = self.process_bucket(bucket);
             if bucket.is_empty() {
@@ -140,7 +148,7 @@ impl<'a, G: Graph> State<'a, G> {
         }
     }
 
-    fn process_bucket(&mut self, current_bucket: BTreeSet<G::Node>) -> BTreeSet<G::Node> {
+    fn process_bucket(&self, current_bucket: BTreeSet<G::Node>) -> BTreeSet<G::Node> {
         let results = current_bucket
             .into_par_iter()
             .map(|node| self.process_neighbors(&node))
@@ -162,7 +170,7 @@ impl<'a, G: Graph> State<'a, G> {
     }
 
     fn update_same_bucket_neighbor(
-        &mut self,
+        &self,
         pending_bucket: &mut BTreeSet<G::Node>,
         neighbor: &Edge<G>,
     ) {
@@ -172,11 +180,15 @@ impl<'a, G: Graph> State<'a, G> {
         }
     }
 
-    fn update_future_bucket_neighbor(&mut self, neighbor: &Edge<G>) {
+    fn update_future_bucket_neighbor(&self, neighbor: &Edge<G>) {
         let new_cost = self.update_neighbor_cost(neighbor, true);
         if new_cost {
             let bucket_id = G::floor_cost(neighbor.total_cost / self.delta);
-            let bucket = self.buckets.entry(bucket_id).or_default();
+            let bucket = {
+                let mut buckets = self.buckets.write().unwrap();
+                buckets.entry(bucket_id).or_default().clone()
+            };
+            let mut bucket = bucket.lock().unwrap();
             bucket.insert(neighbor.target);
         }
     }
