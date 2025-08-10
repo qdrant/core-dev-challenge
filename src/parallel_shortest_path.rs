@@ -31,7 +31,7 @@ struct State<'a, G: Graph> {
     graph: &'a G,
     delta: G::Cost,
     lowest_costs: HashMap<G::Node, LowestCost<G>>,
-    buckets: BTreeMap<usize, HashSet<G::Node>>,
+    buckets: BTreeMap<usize, Vec<G::Node>>,
 }
 
 #[derive(Debug)]
@@ -78,7 +78,7 @@ impl<'a, G: Graph> State<'a, G> {
             buckets: BTreeMap::new(),
         };
 
-        state.process_next_bucket(HashSet::from([source]));
+        state.process_next_bucket(vec![source]);
         state.process_buckets(target);
         state.retrieve_result(source, target)
     }
@@ -123,11 +123,11 @@ impl<'a, G: Graph> State<'a, G> {
         }
     }
 
-    fn pop_next_bucket(&mut self) -> Option<(usize, HashSet<G::Node>)> {
+    fn pop_next_bucket(&mut self) -> Option<(usize, Vec<G::Node>)> {
         self.buckets.pop_first()
     }
 
-    fn process_next_bucket(&mut self, mut bucket: HashSet<G::Node>) {
+    fn process_next_bucket(&mut self, mut bucket: Vec<G::Node>) {
         loop {
             let new_nodes = self.process_current_bucket(&bucket);
             if new_nodes.is_empty() {
@@ -140,15 +140,15 @@ impl<'a, G: Graph> State<'a, G> {
         self.process_bucket_future_neighbors(bucket);
     }
 
-    fn process_current_bucket(&mut self, current_bucket: &HashSet<G::Node>) -> HashSet<G::Node> {
+    fn process_current_bucket(&mut self, current_bucket: &Vec<G::Node>) -> Vec<G::Node> {
         let delta = self.delta;
         let sink = Arc::new(Mutex::new(Vec::new()));
 
-        current_bucket
+        HashSet::<G::Node>::from_iter(current_bucket.iter().cloned())
             .par_iter()
             .for_each(|node| self.get_neighbors(node, sink.clone(), |cost| cost <= delta));
 
-        let mut pending_bucket = HashSet::new();
+        let mut pending_bucket = Vec::new();
         for edge in sink.lock().unwrap().drain(..) {
             self.update_same_bucket_neighbor(&mut pending_bucket, &edge);
         }
@@ -156,11 +156,11 @@ impl<'a, G: Graph> State<'a, G> {
         pending_bucket
     }
 
-    fn process_bucket_future_neighbors(&mut self, current_bucket_acc: HashSet<G::Node>) {
+    fn process_bucket_future_neighbors(&mut self, current_bucket_acc: Vec<G::Node>) {
         let delta = self.delta;
         let sink = Arc::new(Mutex::new(Vec::new()));
 
-        current_bucket_acc
+        HashSet::<G::Node>::from_iter(current_bucket_acc.iter().cloned())
             .par_iter()
             .for_each(|node| self.get_neighbors(node, sink.clone(), |cost| cost > delta));
 
@@ -171,12 +171,12 @@ impl<'a, G: Graph> State<'a, G> {
 
     fn update_same_bucket_neighbor(
         &mut self,
-        pending_bucket: &mut HashSet<G::Node>,
+        pending_bucket: &mut Vec<G::Node>,
         neighbor: &Edge<G>,
     ) {
         let new_cost = self.update_neighbor_cost(neighbor, false);
         if new_cost {
-            pending_bucket.insert(neighbor.target);
+            pending_bucket.push(neighbor.target);
         }
     }
 
@@ -185,7 +185,7 @@ impl<'a, G: Graph> State<'a, G> {
         if new_cost {
             let bucket_id = G::floor_cost(neighbor.total_cost / self.delta);
             let bucket = self.buckets.entry(bucket_id).or_default();
-            bucket.insert(neighbor.target);
+            bucket.push(neighbor.target);
         }
     }
 
