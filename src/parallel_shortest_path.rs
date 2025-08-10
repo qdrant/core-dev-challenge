@@ -1,5 +1,5 @@
 use num_traits::Zero;
-use rayon::{join, prelude::*};
+use rayon::prelude::*;
 use std::{
     collections::{BTreeMap, HashMap, HashSet, VecDeque},
     sync::{Arc, Mutex, RwLock},
@@ -38,7 +38,6 @@ struct State<'a, G: Graph> {
 struct Edge<G: Graph> {
     source: G::Node,
     target: G::Node,
-    cost: G::Cost,
     total_cost: G::Cost,
 }
 
@@ -136,21 +135,31 @@ impl<'a, G: Graph> State<'a, G> {
 
     fn process_next_bucket(&self, mut bucket: HashSet<G::Node>) {
         loop {
-            bucket = self.process_bucket(bucket);
-            if bucket.is_empty() {
+            let new_nodes = self.process_bucket(&bucket);
+            if new_nodes.is_empty() {
                 break;
+            } else {
+                bucket.extend(new_nodes.into_iter());
             }
         }
+
+        self.process_bucket_future_neighbors(bucket);
     }
 
-    fn process_bucket(&self, current_bucket: HashSet<G::Node>) -> HashSet<G::Node> {
+    fn process_bucket(&self, current_bucket: &HashSet<G::Node>) -> HashSet<G::Node> {
         let pending_bucket = Arc::new(Mutex::new(HashSet::new()));
 
         current_bucket
-            .into_par_iter()
-            .for_each(|node| self.process_neighbors(pending_bucket.clone(), &node));
+            .par_iter()
+            .for_each(|node| self.process_neighbors(pending_bucket.clone(), node));
 
         core::mem::take(&mut *pending_bucket.lock().unwrap())
+    }
+
+    fn process_bucket_future_neighbors(&self, current_bucket_acc: HashSet<G::Node>) {
+        current_bucket_acc
+            .into_par_iter()
+            .for_each(|node| self.process_future_neighbors(&node));
     }
 
     fn update_same_bucket_neighbor(
@@ -210,30 +219,39 @@ impl<'a, G: Graph> State<'a, G> {
         };
 
         if let Some(neighbors) = self.graph.get_neighbors(node) {
-            let (current_neighbors, future_neighbors) = neighbors
-                .into_iter()
-                .map(|(neighbor, cost)| Edge::<G> {
-                    source: *node,
-                    target: neighbor,
-                    cost: cost,
-                    total_cost: current_cost.cost + cost,
-                })
-                .partition::<Vec<_>, _>(|edge| edge.cost <= self.delta);
+            let mut pending_bucket = pending_bucket.lock().unwrap();
+            for (neighbor, cost) in neighbors {
+                if cost <= self.delta {
+                    let edge = Edge::<G> {
+                        source: *node,
+                        target: neighbor,
+                        total_cost: current_cost.cost + cost,
+                    };
 
-            let task_a = || {
-                let mut pending_bucket = pending_bucket.lock().unwrap();
-                for edge in current_neighbors {
                     self.update_same_bucket_neighbor(&mut pending_bucket, &edge);
                 }
-            };
+            }
+        }
+    }
 
-            let task_b = || {
-                for edge in future_neighbors {
+    fn process_future_neighbors(&self, node: &G::Node) {
+        let current_cost = {
+            let lowest_costs = self.lowest_costs.read().unwrap();
+            lowest_costs.get(node).cloned().unwrap()
+        };
+
+        if let Some(neighbors) = self.graph.get_neighbors(node) {
+            for (neighbor, cost) in neighbors {
+                if cost > self.delta {
+                    let edge = Edge::<G> {
+                        source: *node,
+                        target: neighbor,
+                        total_cost: current_cost.cost + cost,
+                    };
+
                     self.update_future_bucket_neighbor(&edge);
                 }
-            };
-
-            join(task_a, task_b);
+            }
         }
     }
 }
