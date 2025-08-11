@@ -12,7 +12,7 @@ pub type Cost = f64;
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct InMemoryGraph {
-    pub adjacency: HashMap<Node, HashMap<Node, Cost>>,
+    adjacency: HashMap<Node, HashMap<Node, Cost>>,
 }
 
 impl Graph for InMemoryGraph {
@@ -25,6 +25,12 @@ impl Graph for InMemoryGraph {
     ) -> Option<impl Iterator<Item = (Self::Node, Self::Cost)>> {
         let neighbors = self.adjacency.get(node)?;
         Some(neighbors.iter().map(|(node, cost)| (*node, *cost)))
+    }
+}
+
+impl InMemoryGraph {
+    pub fn adjacency(&self) -> &HashMap<Node, HashMap<Node, Cost>> {
+        &self.adjacency
     }
 }
 
@@ -48,6 +54,10 @@ impl Ord for State {
     }
 }
 
+#[derive(thiserror::Error, Debug)]
+#[error("Negative edge weight is not allowed")]
+pub struct ErrNegativeWeight;
+
 impl InMemoryGraph {
     pub fn new() -> Self {
         Self {
@@ -59,7 +69,21 @@ impl InMemoryGraph {
         self.adjacency.entry(v).or_default();
     }
 
-    pub fn add_edge(&mut self, from: Node, to: Node, weight: Cost) {
+    pub fn add_edge(
+        &mut self,
+        from: Node,
+        to: Node,
+        weight: Cost,
+    ) -> Result<(), ErrNegativeWeight> {
+        if weight < 0.0 {
+            return Err(ErrNegativeWeight);
+        }
+
+        self.add_edge_unchecked(from, to, weight);
+        Ok(())
+    }
+
+    fn add_edge_unchecked(&mut self, from: Node, to: Node, weight: Cost) {
         self.add_vertex(from);
         self.add_vertex(to);
         self.adjacency.get_mut(&from).unwrap().insert(to, weight);
@@ -153,7 +177,7 @@ impl InMemoryGraph {
 
     // For backward compatibility with unweighted graphs
     pub fn add_unweighted_edge(&mut self, from: Node, to: Node) {
-        self.add_edge(from, to, 1.0);
+        self.add_edge(from, to, 1.0).unwrap();
     }
 
     /// Generate a random connected graph with specified number of vertices
@@ -171,7 +195,11 @@ impl InMemoryGraph {
         additional_edges: u64,
         min_weight: Cost,
         max_weight: Cost,
-    ) -> Self {
+    ) -> Result<Self, ErrNegativeWeight> {
+        if min_weight < 0.0 || max_weight < 0.0 {
+            return Err(ErrNegativeWeight);
+        }
+
         let mut graph = InMemoryGraph::new();
         let mut rng = rand::thread_rng();
 
@@ -184,7 +212,7 @@ impl InMemoryGraph {
         for i in 1..num_vertices {
             let parent = rng.gen_range(0..i);
             let weight = rng.gen_range(min_weight..max_weight);
-            graph.add_edge(parent, i, weight);
+            graph.add_edge_unchecked(parent, i, weight);
         }
 
         // Add additional random edges
@@ -198,13 +226,13 @@ impl InMemoryGraph {
 
             if from != to && graph.get_edge_weight(from, to).is_none() {
                 let weight = rng.gen_range(min_weight..max_weight);
-                graph.add_edge(from, to, weight);
+                graph.add_edge_unchecked(from, to, weight);
                 edges_added += 1;
             }
             attempts += 1;
         }
 
-        graph
+        Ok(graph)
     }
 
     pub fn load_or_generate_random_connected_graph(
@@ -222,7 +250,8 @@ impl InMemoryGraph {
                 additional_edges,
                 min_weight,
                 max_weight,
-            );
+            )
+            .map_err(io::Error::other)?;
             graph.save_to_file(path)?;
             Ok(graph)
         }

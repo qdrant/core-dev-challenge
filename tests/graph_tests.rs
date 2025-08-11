@@ -7,15 +7,15 @@ use std::fs;
 fn test_add_and_remove_vertex() {
     let mut g = InMemoryGraph::new();
     g.add_vertex(1);
-    assert!(g.adjacency.contains_key(&1));
+    assert!(g.adjacency().contains_key(&1));
     g.remove_vertex(1);
-    assert!(!g.adjacency.contains_key(&1));
+    assert!(!g.adjacency().contains_key(&1));
 }
 
 #[test]
 fn test_add_and_remove_edge() {
     let mut g = InMemoryGraph::new();
-    g.add_edge(1, 2, 5.0);
+    g.add_edge(1, 2, 5.0).unwrap();
     assert_eq!(g.get_edge_weight(1, 2), Some(5.0));
     g.remove_edge(1, 2);
     assert_eq!(g.get_edge_weight(1, 2), None);
@@ -24,8 +24,8 @@ fn test_add_and_remove_edge() {
 #[test]
 fn test_neighbors() {
     let mut g = InMemoryGraph::new();
-    g.add_edge(1, 2, 3.0);
-    g.add_edge(1, 3, 7.0);
+    g.add_edge(1, 2, 3.0).unwrap();
+    g.add_edge(1, 3, 7.0).unwrap();
     let neighbors = g.neighbors(1).unwrap();
     assert_eq!(neighbors.get(&2), Some(&3.0));
     assert_eq!(neighbors.get(&3), Some(&7.0));
@@ -34,21 +34,21 @@ fn test_neighbors() {
 #[test]
 fn test_persistence() {
     let mut g = InMemoryGraph::new();
-    g.add_edge(1, 2, 4.5);
+    g.add_edge(1, 2, 4.5).unwrap();
     let path = "test_graph.bin";
     g.save_to_file(path).unwrap();
     let loaded = InMemoryGraph::load_from_file(path).unwrap();
-    assert_eq!(g.adjacency, loaded.adjacency);
+    assert_eq!(g.adjacency(), loaded.adjacency());
     fs::remove_file(path).unwrap();
 }
 
 #[test]
 fn test_shortest_path() {
     let mut g = InMemoryGraph::new();
-    g.add_edge(1, 2, 1.0);
-    g.add_edge(2, 3, 2.0);
-    g.add_edge(1, 4, 4.0);
-    g.add_edge(4, 3, 1.0);
+    g.add_edge(1, 2, 1.0).unwrap();
+    g.add_edge(2, 3, 2.0).unwrap();
+    g.add_edge(1, 4, 4.0).unwrap();
+    g.add_edge(4, 3, 1.0).unwrap();
     let (path, cost) = g.shortest_path(1, 3).unwrap();
     assert_eq!(path, vec![1, 2, 3]);
     assert_eq!(cost, 3.0);
@@ -58,9 +58,9 @@ fn test_shortest_path() {
 #[test]
 fn test_weighted_shortest_path() {
     let mut g = InMemoryGraph::new();
-    g.add_edge(1, 2, 5.0);
-    g.add_edge(2, 3, 2.0);
-    g.add_edge(1, 3, 10.0);
+    g.add_edge(1, 2, 5.0).unwrap();
+    g.add_edge(2, 3, 2.0).unwrap();
+    g.add_edge(1, 3, 10.0).unwrap();
     let (path, cost) = g.parallel_shortest_path(1, 3, 5.0).unwrap();
     assert_eq!(path, vec![1, 2, 3]);
     assert_eq!(cost, 7.0);
@@ -70,17 +70,17 @@ fn test_weighted_shortest_path() {
 fn test_complex_shortest_path() {
     let mut g = InMemoryGraph::new();
     // Create a more complex graph with multiple possible paths
-    g.add_edge(1, 2, 4.0);
-    g.add_edge(2, 3, 2.0);
-    g.add_edge(3, 4, 3.0);
-    g.add_edge(4, 5, 1.0);
-    g.add_edge(1, 6, 2.0);
-    g.add_edge(6, 7, 5.0);
-    g.add_edge(7, 5, 3.0);
-    g.add_edge(1, 8, 6.0);
-    g.add_edge(8, 5, 4.0);
-    g.add_edge(2, 7, 3.0);
-    g.add_edge(3, 8, 5.0);
+    g.add_edge(1, 2, 4.0).unwrap();
+    g.add_edge(2, 3, 2.0).unwrap();
+    g.add_edge(3, 4, 3.0).unwrap();
+    g.add_edge(4, 5, 1.0).unwrap();
+    g.add_edge(1, 6, 2.0).unwrap();
+    g.add_edge(6, 7, 5.0).unwrap();
+    g.add_edge(7, 5, 3.0).unwrap();
+    g.add_edge(1, 8, 6.0).unwrap();
+    g.add_edge(8, 5, 4.0).unwrap();
+    g.add_edge(2, 7, 3.0).unwrap();
+    g.add_edge(3, 8, 5.0).unwrap();
 
     // Test shortest path from 1 to 5
     // Path options:
@@ -116,14 +116,14 @@ fn test_unweighted_edge() {
 
 #[test]
 fn test_random_connected_graph() {
-    let graph = InMemoryGraph::random_connected_graph(10, 5, 1.0, 10.0);
+    let graph = InMemoryGraph::random_connected_graph(10, 5, 1.0, 10.0).unwrap();
 
     // Check that we have the right number of vertices
-    assert_eq!(graph.adjacency.len(), 10);
+    assert_eq!(graph.adjacency().len(), 10);
 
     // Count edges (should be at least 9 for connectivity + 5 additional)
     let edge_count: usize = graph
-        .adjacency
+        .adjacency()
         .values()
         .map(|neighbors| neighbors.len())
         .sum();
@@ -137,7 +137,7 @@ fn test_random_connected_graph() {
 #[test]
 fn test_parallel_random_connected_graph() {
     for _ in 0..100 {
-        let graph = InMemoryGraph::random_connected_graph(1000, 1000, 1.0, 50.0);
+        let graph = InMemoryGraph::random_connected_graph(1000, 1000, 1.0, 50.0).unwrap();
 
         // Check connectivity by ensuring there's a path from 0 to 9
         let (path, cost) = graph.shortest_path(0, 999).unwrap();
@@ -153,10 +153,10 @@ fn test_parallel_random_connected_graph() {
 #[test]
 fn test_parallel_shortest_path_basic() {
     let mut g = InMemoryGraph::new();
-    g.add_edge(1, 2, 1.0);
-    g.add_edge(2, 3, 2.0);
-    g.add_edge(1, 4, 4.0);
-    g.add_edge(4, 3, 1.0);
+    g.add_edge(1, 2, 1.0).unwrap();
+    g.add_edge(2, 3, 2.0).unwrap();
+    g.add_edge(1, 4, 4.0).unwrap();
+    g.add_edge(4, 3, 1.0).unwrap();
 
     let (path2, cost2) = g.parallel_shortest_path(1, 3, 2.0).unwrap();
     assert_eq!(path2, vec![1, 2, 3]);
@@ -170,17 +170,17 @@ fn test_parallel_shortest_path_basic() {
 fn test_parallel_vs_sequential_shortest_path() {
     let mut g = InMemoryGraph::new();
     // Create a more complex graph
-    g.add_edge(1, 2, 4.0);
-    g.add_edge(2, 3, 2.0);
-    g.add_edge(3, 4, 3.0);
-    g.add_edge(4, 5, 1.0);
-    g.add_edge(1, 6, 2.0);
-    g.add_edge(6, 7, 5.0);
-    g.add_edge(7, 5, 3.0);
-    g.add_edge(1, 8, 6.0);
-    g.add_edge(8, 5, 4.0);
-    g.add_edge(2, 7, 3.0);
-    g.add_edge(3, 8, 5.0);
+    g.add_edge(1, 2, 4.0).unwrap();
+    g.add_edge(2, 3, 2.0).unwrap();
+    g.add_edge(3, 4, 3.0).unwrap();
+    g.add_edge(4, 5, 1.0).unwrap();
+    g.add_edge(1, 6, 2.0).unwrap();
+    g.add_edge(6, 7, 5.0).unwrap();
+    g.add_edge(7, 5, 3.0).unwrap();
+    g.add_edge(1, 8, 6.0).unwrap();
+    g.add_edge(8, 5, 4.0).unwrap();
+    g.add_edge(2, 7, 3.0).unwrap();
+    g.add_edge(3, 8, 5.0).unwrap();
 
     // Test multiple paths and compare results
     for start in [1, 2, 3] {
@@ -209,11 +209,11 @@ fn test_parallel_vs_sequential_shortest_path() {
 #[test]
 fn test_parallel_shortest_path_different_deltas() {
     let mut g = InMemoryGraph::new();
-    g.add_edge(1, 2, 1.0);
-    g.add_edge(2, 3, 2.0);
-    g.add_edge(3, 4, 3.0);
-    g.add_edge(1, 5, 10.0);
-    g.add_edge(5, 4, 1.0);
+    g.add_edge(1, 2, 1.0).unwrap();
+    g.add_edge(2, 3, 2.0).unwrap();
+    g.add_edge(3, 4, 3.0).unwrap();
+    g.add_edge(1, 5, 10.0).unwrap();
+    g.add_edge(5, 4, 1.0).unwrap();
 
     let expected_cost = 6.0; // 1->2->3->4
 
@@ -244,7 +244,7 @@ fn test_parallel_shortest_path_single_vertex() {
 #[test]
 fn test_parallel_shortest_path_large_graph() {
     // Test with randomly generated graph
-    let graph = InMemoryGraph::random_connected_graph(50, 100, 1.0, 10.0);
+    let graph = InMemoryGraph::random_connected_graph(50, 100, 1.0, 10.0).unwrap();
 
     // Test a few random paths
     if let Some((_, seq_cost)) = graph.shortest_path(0, 49) {

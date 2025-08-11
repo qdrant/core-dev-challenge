@@ -4,13 +4,19 @@ use graph_challenge::{
 };
 
 const MAX: u64 = 640000;
-const DELTA: f64 = 1.0;
 const EXTRA_EDGES: u64 = MAX * 2;
 const GRAPH_PATH: &str = "graph.bin";
+const BUCKETS: usize = 50;
 
 fn load_graph() -> InMemoryGraph {
-    InMemoryGraph::load_or_generate_random_connected_graph(GRAPH_PATH, MAX, EXTRA_EDGES, 1.0, 50.0)
-        .unwrap()
+    InMemoryGraph::load_or_generate_random_connected_graph(
+        GRAPH_PATH,
+        MAX,
+        EXTRA_EDGES,
+        1.0,
+        BUCKETS as f64,
+    )
+    .unwrap()
 }
 
 fn bench_shortest_path(c: &mut Criterion) {
@@ -26,7 +32,7 @@ fn bench_parallel_shortest_path(c: &mut Criterion) {
     let g = load_graph();
     c.bench_function("parallel shortest path on random connected graph", |b| {
         b.iter(|| {
-            g.parallel_shortest_path(0, MAX - 1, DELTA);
+            g.parallel_shortest_path(0, MAX - 1, 1.0);
         })
     });
 }
