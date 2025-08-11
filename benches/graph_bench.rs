@@ -30,7 +30,7 @@ const TOTAL_NODES: u64 = 640000;
 /**
    The additional random edges to add to the graph.
 */
-const EXTRA_EDGES: u64 = TOTAL_NODES * 4;
+const EXTRA_EDGES: u64 = TOTAL_NODES * 2;
 
 /**
    The maximum weight of an edge in the graph.

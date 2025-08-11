@@ -250,8 +250,8 @@ impl<'a, G: GraphDeps> State<'a, G> {
     }
 
     /**
-       Process neighbors of the given nodes that belong to the current bucket. Returns true if new nodes
-       were added to the current bucket for further processing.S
+       Process neighbors of the given nodes that belong to the current bucket. (light edges)
+       Returns true if new nodes were added to the current bucket for further processing.
 
        The neighbors are filtered based on whether the immediate cost to the neighbor from the given node
        is less than or equal to the delta value.
@@ -260,6 +260,7 @@ impl<'a, G: GraphDeps> State<'a, G> {
         let delta = self.delta;
 
         // Get the neighbors of the nodes in parallel
+        // TODO: it is unclear whether the actual filter should check on the total cost instead of the immediate cost.
         let edges = self.get_neighbors_from_nodes(current_bucket, |cost| cost <= delta);
 
         /*
@@ -276,7 +277,7 @@ impl<'a, G: GraphDeps> State<'a, G> {
     }
 
     /**
-       Process neighbors of the given nodes that belong to the future buckets.
+       Process neighbors of the given nodes that belong to the future buckets. (heavy edges)
 
        The neighbors are filtered based on whether the immediate cost to the neighbor from the given node
        is greater than the delta value.
@@ -285,6 +286,7 @@ impl<'a, G: GraphDeps> State<'a, G> {
         let delta = self.delta;
 
         // Get the neighbors of the nodes in parallel
+        // TODO: it is unclear whether the actual filter should check on the total cost instead of the immediate cost.
         let edges = self.get_neighbors_from_nodes(&nodes, |cost| cost > delta);
 
         /*
