@@ -137,29 +137,19 @@ impl<'a, G: Graph> State<'a, G> {
 
     fn process_current_bucket(&mut self, current_bucket: &Vec<G::Node>) -> Vec<G::Node> {
         let delta = self.delta;
-        let sink = Arc::new(Mutex::new(Vec::new()));
-
-        HashSet::<G::Node>::from_iter(current_bucket.iter().cloned())
-            .par_iter()
-            .for_each(|node| self.get_neighbors(node, sink.clone(), |cost| cost <= delta));
+        let edges = self.get_neighbors_from_nodes(current_bucket, |cost| cost <= delta);
 
         let mut pending_bucket = Vec::new();
-        for edge in sink.lock().unwrap().drain(..) {
+        for edge in edges {
             self.update_same_bucket_neighbor(&mut pending_bucket, &edge);
         }
-
         pending_bucket
     }
 
     fn process_bucket_future_neighbors(&mut self, current_bucket_acc: Vec<G::Node>) {
         let delta = self.delta;
-        let sink = Arc::new(Mutex::new(Vec::new()));
-
-        HashSet::<G::Node>::from_iter(current_bucket_acc.iter().cloned())
-            .par_iter()
-            .for_each(|node| self.get_neighbors(node, sink.clone(), |cost| cost > delta));
-
-        for edge in sink.lock().unwrap().drain(..) {
+        let edges = self.get_neighbors_from_nodes(&current_bucket_acc, |cost| cost > delta);
+        for edge in edges {
             self.update_future_bucket_neighbor(&edge);
         }
     }
@@ -207,18 +197,33 @@ impl<'a, G: Graph> State<'a, G> {
         }
     }
 
-    fn get_neighbors(
+    fn get_neighbors_from_nodes(
+        &self,
+        nodes: &[G::Node],
+        predicate: impl Fn(G::Cost) -> bool + Send + Sync,
+    ) -> Vec<Edge<G>> {
+        let sink = Arc::new(Mutex::new(Vec::new()));
+
+        HashSet::<G::Node>::from_iter(nodes.iter().cloned())
+            .par_iter()
+            .for_each(|node| self.get_neighbors_from_node(node, sink.clone(), &predicate));
+
+        let mut edges = sink.lock().unwrap();
+        core::mem::take(&mut *edges)
+    }
+
+    fn get_neighbors_from_node(
         &self,
         node: &G::Node,
         sink: Arc<Mutex<Vec<Edge<G>>>>,
-        filter: impl Fn(G::Cost) -> bool,
+        predicate: impl Fn(G::Cost) -> bool,
     ) {
         let current_cost = self.lowest_costs.get(node).unwrap();
 
         if let Some(neighbors) = self.graph.get_neighbors(node) {
             let mut sink = sink.lock().unwrap();
             for (neighbor, cost) in neighbors {
-                if filter(cost) {
+                if predicate(cost) {
                     sink.push(Edge {
                         source: *node,
                         target: neighbor,
