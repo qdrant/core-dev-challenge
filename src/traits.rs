@@ -2,7 +2,7 @@ use core::fmt::Debug;
 use core::hash::Hash;
 use core::ops::{Add, Div};
 
-use num_traits::Float;
+use num_traits::{AsPrimitive, Zero};
 
 pub trait Graph: Sized + Send + Sync + Debug {
     type Node: Send + Sync + Copy + Clone + Debug + Ord + Hash;
@@ -11,19 +11,17 @@ pub trait Graph: Sized + Send + Sync + Debug {
         + Copy
         + Clone
         + Debug
-        + Float
         + Default
         + PartialOrd
+        + Zero
         + Add<Output = Self::Cost>
         + Div<Output = Self::Cost>
-        + From<u32>;
+        + AsPrimitive<usize>;
 
     fn get_neighbors(
         &self,
         node: &Self::Node,
     ) -> Option<impl Iterator<Item = (Self::Node, Self::Cost)>>;
-
-    fn floor_cost(cost: Self::Cost) -> usize;
 }
 
 pub type NodeOf<G> = <G as Graph>::Node;

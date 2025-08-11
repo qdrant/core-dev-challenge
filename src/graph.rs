@@ -24,10 +24,6 @@ impl crate::traits::Graph for Graph {
         let neighbors = self.adjacency.get(node)?;
         Some(neighbors.iter().map(|(node, cost)| (*node, *cost)))
     }
-
-    fn floor_cost(cost: Self::Cost) -> usize {
-        cost.floor() as usize
-    }
 }
 
 #[derive(Debug, Clone, PartialEq)]

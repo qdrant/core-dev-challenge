@@ -1,4 +1,4 @@
-use num_traits::Zero;
+use num_traits::{AsPrimitive, Zero};
 use rayon::prelude::*;
 use std::collections::hash_map::Entry;
 use std::{
@@ -180,7 +180,7 @@ impl<'a, G: Graph> State<'a, G> {
     }
 
     fn bucket_id_from_cost(&self, cost: G::Cost) -> usize {
-        G::floor_cost(cost / self.delta)
+        (cost / self.delta).as_()
     }
 
     /**
