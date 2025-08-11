@@ -124,50 +124,50 @@ impl<'a, G: Graph> State<'a, G> {
     }
 
     fn process_next_bucket(&mut self, mut bucket: Vec<G::Node>) {
-        loop {
-            let new_nodes = self.process_current_bucket(&bucket);
-            if new_nodes.is_empty() {
-                break;
-            } else {
-                bucket.extend(new_nodes);
-            }
-        }
+        while self.process_current_bucket(&mut bucket) {}
 
         self.process_bucket_future_neighbors(bucket);
     }
 
-    fn process_current_bucket(&mut self, current_bucket: &[G::Node]) -> Vec<G::Node> {
+    fn process_current_bucket(&mut self, current_bucket: &mut Vec<G::Node>) -> bool {
         let delta = self.delta;
         let edges = self.get_neighbors_from_nodes(current_bucket, |cost| cost <= delta);
 
-        let mut pending_bucket = Vec::new();
+        let mut updated = false;
         for edge in edges {
-            self.update_current_bucket_neighbor(&mut pending_bucket, &edge);
+            updated = updated || self.update_current_bucket_neighbor(current_bucket, &edge);
         }
-        pending_bucket
-    }
-
-    fn process_bucket_future_neighbors(&mut self, current_bucket_acc: Vec<G::Node>) {
-        let delta = self.delta;
-        let edges = self.get_neighbors_from_nodes(&current_bucket_acc, |cost| cost > delta);
-        for edge in edges {
-            self.update_future_bucket_neighbor(&edge);
-        }
+        updated
     }
 
     fn update_current_bucket_neighbor(
         &mut self,
         pending_bucket: &mut Vec<G::Node>,
         neighbor: &Edge<G>,
-    ) {
+    ) -> bool {
         let new_cost = self.update_neighbor_cost(neighbor);
         if new_cost {
             pending_bucket.push(neighbor.target);
+            true
+        } else {
+            false
+        }
+    }
+
+    fn process_bucket_future_neighbors(&mut self, current_bucket_acc: Vec<G::Node>) {
+        let delta = self.delta;
+        let edges = self.get_neighbors_from_nodes(&current_bucket_acc, |cost| cost > delta);
+
+        for edge in edges {
+            self.update_future_bucket_neighbor(&edge);
         }
     }
 
     /**
        Update a neighbor edge that belongs to a future bucket.
+
+       If the neighbor node has a lower total cost than the current lowest cost, it is added to the
+       future bucket to be processed later, based on the bucket ID that is derived from the delta value.
     */
     fn update_future_bucket_neighbor(&mut self, edge: &Edge<G>) {
         let new_cost = self.update_neighbor_cost(edge);
