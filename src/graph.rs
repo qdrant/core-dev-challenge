@@ -3,7 +3,7 @@ use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 use std::cmp::Ordering;
 use std::collections::{BinaryHeap, HashMap};
-use std::fs::File;
+use std::fs::{self, File};
 use std::io::{self, BufReader, BufWriter};
 use std::sync::{Arc, Mutex};
 
@@ -398,6 +398,27 @@ impl Graph {
         }
 
         graph
+    }
+
+    pub fn load_or_generate_random_connected_graph(
+        path: &str,
+        num_vertices: Node,
+        additional_edges: u64,
+        min_weight: Cost,
+        max_weight: Cost,
+    ) -> io::Result<Self> {
+        if fs::exists(path)? {
+            Self::load_from_file(path)
+        } else {
+            let graph = Self::random_connected_graph(
+                num_vertices,
+                additional_edges,
+                min_weight,
+                max_weight,
+            );
+            graph.save_to_file(path)?;
+            Ok(graph)
+        }
     }
 }
 
