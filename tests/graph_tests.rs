@@ -134,7 +134,6 @@ fn test_random_connected_graph() {
     assert!(!path.is_empty());
 }
 
-
 /*
     Generate random connected graphs and test that both the parallel and the original sequential
     shortest path algorithms return the same results.
