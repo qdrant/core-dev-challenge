@@ -8,7 +8,19 @@ use std::{
 
 use crate::traits::Graph;
 
+/**
+   An extension trait for running the delta-stepping algorithm to compute the shortest path
+   in a parallel manner.
+*/
 pub trait CanComputeParallelShortestPath: Graph {
+    /*
+       Compute the shortest path from `source` to `target` using the delta-stepping algorithm,
+       based on the given graph `G`. If a shortest path is found, returns a `VecDeque` of nodes
+       from source to target, together with the total cost of that path.
+
+       The given `delta` value will determine the parallelism of the algorithm to process the
+       node neighbors in parallel.
+    */
     fn parallel_shortest_path(
         &self,
         source: Self::Node,
@@ -28,35 +40,54 @@ impl<G: Graph> CanComputeParallelShortestPath for G {
     }
 }
 
+/**
+   The internal state that is used to run the delta-stepping algorithm.
+*/
 struct State<'a, G: Graph> {
+    /**
+        A reference to the graph that is used to compute the shortest path.
+
+        The graph must not be modified while the algorithm is running,
+        or incorrect results may be produced.
+    */
     graph: &'a G,
+
+    /**
+       The delta value used to divide the node buckets based on the cost.
+    */
     delta: G::Cost,
     lowest_costs: HashMap<G::Node, LowestCost<G>>,
     buckets: BTreeMap<usize, Vec<G::Node>>,
 }
 
-#[derive(Debug)]
+/**
+   An edge that connects a local source node to a target node, together with the lowest
+   total cost to reach the target from the global source node.
+*/
 struct Edge<G: Graph> {
     source: G::Node,
     target: G::Node,
     total_cost: G::Cost,
 }
 
+/**
+   The entry type to store the lowest cost to reach a given node. This also includes the predecessor node
+   that leads to the lowest code. This is used to reconstruct the shortest path at the end.
+*/
 struct LowestCost<G: Graph> {
     cost: G::Cost,
     predecessor: G::Node,
 }
 
-impl<G: Graph> Clone for LowestCost<G> {
-    fn clone(&self) -> Self {
-        Self {
-            cost: self.cost,
-            predecessor: self.predecessor,
-        }
-    }
-}
-
 impl<'a, G: Graph> State<'a, G> {
+    /*
+       Compute the shortest path from `source` to `target` using the delta-stepping algorithm,
+       based on the given graph `G`. If a shortest path is found, returns a `VecDeque` of nodes
+       from source to target, together with the total cost of that path.
+
+       The given `delta` value will determine the parallelism of the algorithm to process the
+       node neighbors in parallel.
+    */
     fn shortest_path(
         graph: &'a G,
         source: G::Node,
@@ -81,25 +112,35 @@ impl<'a, G: Graph> State<'a, G> {
         state.retrieve_result(source, target)
     }
 
+    /**
+       Retrieve the result shortest path from the source node to the target node.
+       Returns a `VecDeque` list of nodes in the path, together with the total cost
+       for that path.
+    */
     fn retrieve_result(
         &self,
         source: G::Node,
         target: G::Node,
     ) -> Option<(VecDeque<G::Node>, G::Cost)> {
+        // If there is no
         let cost = self.lowest_costs.get(&target)?;
-        let mut path = VecDeque::from([target]);
 
-        let mut current = target;
-        while let Some(cost) = self.lowest_costs.get(&current) {
+        let mut current = cost.predecessor;
+        let mut path = VecDeque::from([current, target]);
+
+        /*
+           Repeatedly get the predecessor of the current node stored in `lowest_costs`,
+           starting from the target node, until we reach the source node.
+        */
+        while current != source
+            && let Some(cost) = self.lowest_costs.get(&current)
+        {
             let predecessor = cost.predecessor;
             path.push_front(predecessor);
-            if predecessor == source {
-                break;
-            } else {
-                current = predecessor;
-            }
+            current = predecessor
         }
 
+        // If the algorithm runs correctly, the we should eventually reach the source node from the target node.
         debug_assert!(path.front() == Some(&source));
 
         Some((path, cost.cost))
@@ -111,12 +152,14 @@ impl<'a, G: Graph> State<'a, G> {
     fn process_buckets(&mut self, target: G::Node) {
         let mut current_bucket_id = 0;
         while let Some((bucket_id, bucket)) = self.buckets.pop_first() {
+            // If the algorithm runs correctly, there should never be new node added to an earlier bucket
             debug_assert!(bucket_id > current_bucket_id);
-
             current_bucket_id = bucket_id;
 
             self.process_bucket(bucket);
 
+            // If we found an entry containing the lowest cost for the target node after fully processing a bucket,
+            // then we know the lowest cost is final, and we can return the result without processing the remaining buckets.
             if self.lowest_costs.contains_key(&target) {
                 return;
             }
