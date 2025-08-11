@@ -135,7 +135,7 @@ fn test_random_connected_graph() {
 #[test]
 fn test_parallel_random_connected_graph() {
     for _ in 0..100 {
-        let graph = Graph::random_connected_graph(1000, 5, 1.0, 50.0);
+        let graph = Graph::random_connected_graph(1000, 1000, 1.0, 50.0);
 
         // Check connectivity by ensuring there's a path from 0 to 9
         let (path, cost) = graph.shortest_path(0, 999).unwrap();

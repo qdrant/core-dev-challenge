@@ -158,12 +158,22 @@ impl<'a, G: Graph> State<'a, G> {
 
             self.process_bucket(bucket);
 
-            // If we found an entry containing the lowest cost for the target node after fully processing a bucket,
-            // then we know the lowest cost is final, and we can return the result without processing the remaining buckets.
-            if self.lowest_costs.contains_key(&target) {
+            /*
+               We can return the result without processing the remaining buckets, given the following conditions:
+
+               - We found an entry containing the lowest cost for the target node after fully processing a bucket,
+               - The current lowest cost does not belong to a future bucket
+            */
+            if let Some(cost) = self.lowest_costs.get(&target)
+                && self.bucket_id_from_cost(cost.cost) <= current_bucket_id
+            {
                 return;
             }
         }
+    }
+
+    fn bucket_id_from_cost(&self, cost: G::Cost) -> usize {
+        G::floor_cost(cost / self.delta)
     }
 
     /**
@@ -271,7 +281,7 @@ impl<'a, G: Graph> State<'a, G> {
     fn update_future_bucket_neighbor(&mut self, edge: &Edge<G>) {
         let new_cost = self.update_neighbor_cost(edge);
         if new_cost {
-            let bucket_id = G::floor_cost(edge.total_cost / self.delta);
+            let bucket_id = self.bucket_id_from_cost(edge.total_cost);
             let bucket = self.buckets.entry(bucket_id).or_default();
             bucket.push(edge.target);
         }
@@ -345,7 +355,13 @@ impl<'a, G: Graph> State<'a, G> {
         sink: Arc<Mutex<Vec<Edge<G>>>>,
         predicate: impl Fn(G::Cost) -> bool,
     ) {
-        // Get the current lowest cost from the global source to the given `node`.
+        /*
+           Get the current lowest cost from the global source to the given `node`.
+
+           If the algorithm runs correctly, this should always be present in `lowest_costs`,
+           as the source node should always be processed already before we reach the target node.
+           So we panic if no entry is found, which indicates a bug in the algorithm.
+        */
         let current_cost = self.lowest_costs.get(node).unwrap();
 
         if let Some(neighbors) = self.graph.get_neighbors(node) {

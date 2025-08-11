@@ -15,7 +15,8 @@ pub trait Graph: Sized + Send + Sync + Debug {
         + Default
         + PartialOrd
         + Add<Output = Self::Cost>
-        + Div<Output = Self::Cost>;
+        + Div<Output = Self::Cost>
+        + From<u32>;
 
     fn get_neighbors(
         &self,
