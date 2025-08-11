@@ -1,5 +1,6 @@
 use num_traits::Zero;
 use rayon::prelude::*;
+use std::collections::hash_map::Entry;
 use std::{
     collections::{BTreeMap, HashMap, HashSet, VecDeque},
     sync::{Arc, Mutex},
@@ -99,7 +100,7 @@ impl<'a, G: Graph> State<'a, G> {
             }
         }
 
-        debug_assert!(path.front().cloned() == Some(source));
+        debug_assert!(path.front() == Some(&source));
 
         Some((path, cost.cost))
     }
@@ -128,20 +129,20 @@ impl<'a, G: Graph> State<'a, G> {
             if new_nodes.is_empty() {
                 break;
             } else {
-                bucket.extend(new_nodes.into_iter());
+                bucket.extend(new_nodes);
             }
         }
 
         self.process_bucket_future_neighbors(bucket);
     }
 
-    fn process_current_bucket(&mut self, current_bucket: &Vec<G::Node>) -> Vec<G::Node> {
+    fn process_current_bucket(&mut self, current_bucket: &[G::Node]) -> Vec<G::Node> {
         let delta = self.delta;
         let edges = self.get_neighbors_from_nodes(current_bucket, |cost| cost <= delta);
 
         let mut pending_bucket = Vec::new();
         for edge in edges {
-            self.update_same_bucket_neighbor(&mut pending_bucket, &edge);
+            self.update_current_bucket_neighbor(&mut pending_bucket, &edge);
         }
         pending_bucket
     }
@@ -154,7 +155,7 @@ impl<'a, G: Graph> State<'a, G> {
         }
     }
 
-    fn update_same_bucket_neighbor(
+    fn update_current_bucket_neighbor(
         &mut self,
         pending_bucket: &mut Vec<G::Node>,
         neighbor: &Edge<G>,
@@ -165,69 +166,101 @@ impl<'a, G: Graph> State<'a, G> {
         }
     }
 
-    fn update_future_bucket_neighbor(&mut self, neighbor: &Edge<G>) {
-        let new_cost = self.update_neighbor_cost(neighbor);
+    /**
+       Update a neighbor edge that belongs to a future bucket.
+    */
+    fn update_future_bucket_neighbor(&mut self, edge: &Edge<G>) {
+        let new_cost = self.update_neighbor_cost(edge);
         if new_cost {
-            let bucket_id = G::floor_cost(neighbor.total_cost / self.delta);
+            let bucket_id = G::floor_cost(edge.total_cost / self.delta);
             let bucket = self.buckets.entry(bucket_id).or_default();
-            bucket.push(neighbor.target);
+            bucket.push(edge.target);
         }
     }
 
-    fn update_neighbor_cost(&mut self, neighbor: &Edge<G>) -> bool {
-        if let Some(current_cost) = self.lowest_costs.get_mut(&neighbor.target) {
-            if neighbor.total_cost < current_cost.cost {
-                *current_cost = LowestCost {
-                    cost: neighbor.total_cost,
-                    predecessor: neighbor.source,
-                };
-                true
-            } else {
-                false
+    /**
+       Update the lowest cost to a given neighbor edge, if the total cost in the given edge is
+       lower than the current lowest cost. Returns true if an update was made.
+    */
+    fn update_neighbor_cost(&mut self, edge: &Edge<G>) -> bool {
+        let entry = self.lowest_costs.entry(edge.target);
+        match entry {
+            Entry::Occupied(mut entry) => {
+                let current_cost = entry.get_mut();
+                if edge.total_cost < current_cost.cost {
+                    *current_cost = LowestCost {
+                        cost: edge.total_cost,
+                        predecessor: edge.source,
+                    };
+                    true
+                } else {
+                    false
+                }
             }
-        } else {
-            self.lowest_costs.insert(
-                neighbor.target,
-                LowestCost {
-                    cost: neighbor.total_cost,
-                    predecessor: neighbor.source,
-                },
-            );
-            true
+            Entry::Vacant(entry) => {
+                entry.insert(LowestCost {
+                    cost: edge.total_cost,
+                    predecessor: edge.source,
+                });
+                true
+            }
         }
     }
 
+    /**
+       In parallel, get the neighbors of the given nodes, together with the total cost to reach them.
+
+       A predicate function is given to filter the neighbor nodes based on their cost from the given node in `nodes`.
+    */
     fn get_neighbors_from_nodes(
         &self,
         nodes: &[G::Node],
         predicate: impl Fn(G::Cost) -> bool + Send + Sync,
     ) -> Vec<Edge<G>> {
+        // Create a mutex of the result edges as a sink for each parallel task to write to.
+        // We choose this approach instead of using `ParallelIterator`'s `collect` or `collect_vec_list`,
+        // because benchmark shows that this results in better performance.
         let sink = Arc::new(Mutex::new(Vec::new()));
 
+        // Use a `HashSet` to deduplicate nodes in the `nodes` list.
+        // We use this approach instead of passing a `HashSet` directly, because benchmark shows that
+        // it is faster to insert the nodes into a `Vec` and then only deduplicate them just before processing.
         HashSet::<G::Node>::from_iter(nodes.iter().cloned())
             .par_iter()
             .for_each(|node| self.get_neighbors_from_node(node, sink.clone(), &predicate));
 
+        // Take the result edges out from the mutex sink and return them.
         let mut edges = sink.lock().unwrap();
         core::mem::take(&mut *edges)
     }
 
+    /**
+       Get the neighbors from a single node. This is called from [`get_neighbors_from_nodes`] by each parallel task.
+
+       A mutex sink is given to store the neighbor edges result. A predicate function is given to filter the neighbors
+       based on their cost from `node`.
+    */
     fn get_neighbors_from_node(
         &self,
         node: &G::Node,
         sink: Arc<Mutex<Vec<Edge<G>>>>,
         predicate: impl Fn(G::Cost) -> bool,
     ) {
+        // Get the current lowest cost from the global source to the given `node`.
         let current_cost = self.lowest_costs.get(node).unwrap();
 
         if let Some(neighbors) = self.graph.get_neighbors(node) {
             let mut sink = sink.lock().unwrap();
             for (neighbor, cost) in neighbors {
                 if predicate(cost) {
+                    // The total cost to the given neighbor node is the current cost to the `node`
+                    // plus the cost from `node` to the `neighbor`.
+                    let total_cost = current_cost.cost + cost;
+
                     sink.push(Edge {
                         source: *node,
                         target: neighbor,
-                        total_cost: current_cost.cost + cost,
+                        total_cost,
                     });
                 }
             }
