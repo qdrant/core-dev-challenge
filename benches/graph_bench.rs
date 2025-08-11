@@ -1,10 +1,12 @@
+use core::time::Duration;
+
 use criterion::{Criterion, criterion_group, criterion_main};
 use graph_challenge::{
     graph::InMemoryGraph, parallel_shortest_path::CanComputeParallelShortestPath,
 };
 
-const MAX: u64 = 640000;
-const EXTRA_EDGES: u64 = MAX * 2;
+const MAX: u64 = 160000;
+const EXTRA_EDGES: u64 = MAX * 4;
 const GRAPH_PATH: &str = "graph.bin";
 const BUCKETS: usize = 50;
 
@@ -21,27 +23,37 @@ fn load_graph() -> InMemoryGraph {
 
 fn bench_shortest_path(c: &mut Criterion) {
     let g = load_graph();
-    c.bench_function("shortest path on random connected graph", |b| {
+    c.bench_function("sequential shortest path on random connected graph", |b| {
         b.iter(|| {
             g.shortest_path(0, MAX - 1);
         })
     });
 }
 
-fn bench_parallel_shortest_path(c: &mut Criterion) {
+fn bench_parallel_shortest_path_50(c: &mut Criterion) {
     let g = load_graph();
-    c.bench_function("parallel shortest path on random connected graph", |b| {
+    c.bench_function("parallel shortest path on random connected graph (50 buckets)", |b| {
         b.iter(|| {
             g.parallel_shortest_path(0, MAX - 1, 1.0);
         })
     });
 }
 
+fn bench_parallel_shortest_path_100(c: &mut Criterion) {
+    let g = load_graph();
+    c.bench_function("parallel shortest path on random connected graph (100 buckets)", |b| {
+        b.iter(|| {
+            g.parallel_shortest_path(0, MAX - 1, 0.5);
+        })
+    });
+}
+
 criterion_group!(
     name = benches;
-    config = Criterion::default().significance_level(0.1).sample_size(10);
+    config = Criterion::default().measurement_time(Duration::from_secs(20)).sample_size(20);
     targets =
-        bench_parallel_shortest_path,
         bench_shortest_path,
+        bench_parallel_shortest_path_50,
+        bench_parallel_shortest_path_100,
 );
 criterion_main!(benches);

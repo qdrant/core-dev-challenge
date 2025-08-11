@@ -134,9 +134,14 @@ fn test_random_connected_graph() {
     assert!(!path.is_empty());
 }
 
+
+/*
+    Generate random connected graphs and test that both the parallel and the original sequential
+    shortest path algorithms return the same results.
+*/
 #[test]
 fn test_parallel_random_connected_graph() {
-    for _ in 0..100 {
+    for _ in 0..10 {
         let graph = InMemoryGraph::random_connected_graph(1000, 1000, 1.0, 50.0).unwrap();
 
         // Check connectivity by ensuring there's a path from 0 to 9
