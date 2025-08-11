@@ -1,9 +1,11 @@
-use graph_challenge::{graph::Graph, parallel_shortest_path::CanComputeParallelShortestPath};
+use graph_challenge::{
+    graph::InMemoryGraph, parallel_shortest_path::CanComputeParallelShortestPath,
+};
 use std::fs;
 
 #[test]
 fn test_add_and_remove_vertex() {
-    let mut g = Graph::new();
+    let mut g = InMemoryGraph::new();
     g.add_vertex(1);
     assert!(g.adjacency.contains_key(&1));
     g.remove_vertex(1);
@@ -12,7 +14,7 @@ fn test_add_and_remove_vertex() {
 
 #[test]
 fn test_add_and_remove_edge() {
-    let mut g = Graph::new();
+    let mut g = InMemoryGraph::new();
     g.add_edge(1, 2, 5.0);
     assert_eq!(g.get_edge_weight(1, 2), Some(5.0));
     g.remove_edge(1, 2);
@@ -21,7 +23,7 @@ fn test_add_and_remove_edge() {
 
 #[test]
 fn test_neighbors() {
-    let mut g = Graph::new();
+    let mut g = InMemoryGraph::new();
     g.add_edge(1, 2, 3.0);
     g.add_edge(1, 3, 7.0);
     let neighbors = g.neighbors(1).unwrap();
@@ -31,18 +33,18 @@ fn test_neighbors() {
 
 #[test]
 fn test_persistence() {
-    let mut g = Graph::new();
+    let mut g = InMemoryGraph::new();
     g.add_edge(1, 2, 4.5);
     let path = "test_graph.bin";
     g.save_to_file(path).unwrap();
-    let loaded = Graph::load_from_file(path).unwrap();
+    let loaded = InMemoryGraph::load_from_file(path).unwrap();
     assert_eq!(g.adjacency, loaded.adjacency);
     fs::remove_file(path).unwrap();
 }
 
 #[test]
 fn test_shortest_path() {
-    let mut g = Graph::new();
+    let mut g = InMemoryGraph::new();
     g.add_edge(1, 2, 1.0);
     g.add_edge(2, 3, 2.0);
     g.add_edge(1, 4, 4.0);
@@ -55,7 +57,7 @@ fn test_shortest_path() {
 
 #[test]
 fn test_weighted_shortest_path() {
-    let mut g = Graph::new();
+    let mut g = InMemoryGraph::new();
     g.add_edge(1, 2, 5.0);
     g.add_edge(2, 3, 2.0);
     g.add_edge(1, 3, 10.0);
@@ -66,7 +68,7 @@ fn test_weighted_shortest_path() {
 
 #[test]
 fn test_complex_shortest_path() {
-    let mut g = Graph::new();
+    let mut g = InMemoryGraph::new();
     // Create a more complex graph with multiple possible paths
     g.add_edge(1, 2, 4.0);
     g.add_edge(2, 3, 2.0);
@@ -107,14 +109,14 @@ fn test_complex_shortest_path() {
 
 #[test]
 fn test_unweighted_edge() {
-    let mut g = Graph::new();
+    let mut g = InMemoryGraph::new();
     g.add_unweighted_edge(1, 2);
     assert_eq!(g.get_edge_weight(1, 2), Some(1.0));
 }
 
 #[test]
 fn test_random_connected_graph() {
-    let graph = Graph::random_connected_graph(10, 5, 1.0, 10.0);
+    let graph = InMemoryGraph::random_connected_graph(10, 5, 1.0, 10.0);
 
     // Check that we have the right number of vertices
     assert_eq!(graph.adjacency.len(), 10);
@@ -135,7 +137,7 @@ fn test_random_connected_graph() {
 #[test]
 fn test_parallel_random_connected_graph() {
     for _ in 0..100 {
-        let graph = Graph::random_connected_graph(1000, 1000, 1.0, 50.0);
+        let graph = InMemoryGraph::random_connected_graph(1000, 1000, 1.0, 50.0);
 
         // Check connectivity by ensuring there's a path from 0 to 9
         let (path, cost) = graph.shortest_path(0, 999).unwrap();
@@ -150,7 +152,7 @@ fn test_parallel_random_connected_graph() {
 
 #[test]
 fn test_parallel_shortest_path_basic() {
-    let mut g = Graph::new();
+    let mut g = InMemoryGraph::new();
     g.add_edge(1, 2, 1.0);
     g.add_edge(2, 3, 2.0);
     g.add_edge(1, 4, 4.0);
@@ -166,7 +168,7 @@ fn test_parallel_shortest_path_basic() {
 
 #[test]
 fn test_parallel_vs_sequential_shortest_path() {
-    let mut g = Graph::new();
+    let mut g = InMemoryGraph::new();
     // Create a more complex graph
     g.add_edge(1, 2, 4.0);
     g.add_edge(2, 3, 2.0);
@@ -206,7 +208,7 @@ fn test_parallel_vs_sequential_shortest_path() {
 
 #[test]
 fn test_parallel_shortest_path_different_deltas() {
-    let mut g = Graph::new();
+    let mut g = InMemoryGraph::new();
     g.add_edge(1, 2, 1.0);
     g.add_edge(2, 3, 2.0);
     g.add_edge(3, 4, 3.0);
@@ -230,7 +232,7 @@ fn test_parallel_shortest_path_different_deltas() {
 
 #[test]
 fn test_parallel_shortest_path_single_vertex() {
-    let mut g = Graph::new();
+    let mut g = InMemoryGraph::new();
     g.add_vertex(1);
 
     // Path from vertex to itself should be empty path with cost 0
@@ -242,7 +244,7 @@ fn test_parallel_shortest_path_single_vertex() {
 #[test]
 fn test_parallel_shortest_path_large_graph() {
     // Test with randomly generated graph
-    let graph = Graph::random_connected_graph(50, 100, 1.0, 10.0);
+    let graph = InMemoryGraph::random_connected_graph(50, 100, 1.0, 10.0);
 
     // Test a few random paths
     if let Some((_, seq_cost)) = graph.shortest_path(0, 49) {

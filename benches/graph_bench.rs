@@ -1,13 +1,16 @@
 use criterion::{Criterion, criterion_group, criterion_main};
-use graph_challenge::{graph::Graph, parallel_shortest_path::CanComputeParallelShortestPath};
+use graph_challenge::{
+    graph::InMemoryGraph, parallel_shortest_path::CanComputeParallelShortestPath,
+};
 
 const MAX: u64 = 640000;
 const DELTA: f64 = 1.0;
 const EXTRA_EDGES: u64 = MAX * 2;
 const GRAPH_PATH: &str = "graph.bin";
 
-fn load_graph() -> Graph {
-    Graph::load_or_generate_random_connected_graph(GRAPH_PATH, MAX, EXTRA_EDGES, 1.0, 50.0).unwrap()
+fn load_graph() -> InMemoryGraph {
+    InMemoryGraph::load_or_generate_random_connected_graph(GRAPH_PATH, MAX, EXTRA_EDGES, 1.0, 50.0)
+        .unwrap()
 }
 
 fn bench_shortest_path(c: &mut Criterion) {

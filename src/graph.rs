@@ -5,15 +5,17 @@ use std::collections::{BinaryHeap, HashMap};
 use std::fs::{self, File};
 use std::io::{self, BufReader, BufWriter};
 
+use crate::traits::Graph;
+
 pub type Node = u64;
 pub type Cost = f64;
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct Graph {
+pub struct InMemoryGraph {
     pub adjacency: HashMap<Node, HashMap<Node, Cost>>,
 }
 
-impl crate::traits::Graph for Graph {
+impl Graph for InMemoryGraph {
     type Node = Node;
     type Cost = Cost;
 
@@ -46,7 +48,7 @@ impl Ord for State {
     }
 }
 
-impl Graph {
+impl InMemoryGraph {
     pub fn new() -> Self {
         Self {
             adjacency: HashMap::new(),
@@ -170,7 +172,7 @@ impl Graph {
         min_weight: Cost,
         max_weight: Cost,
     ) -> Self {
-        let mut graph = Graph::new();
+        let mut graph = InMemoryGraph::new();
         let mut rng = rand::thread_rng();
 
         // Add all vertices first
@@ -227,7 +229,7 @@ impl Graph {
     }
 }
 
-impl Default for Graph {
+impl Default for InMemoryGraph {
     fn default() -> Self {
         Self::new()
     }
