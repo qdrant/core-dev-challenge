@@ -94,6 +94,13 @@ impl<'a, G: Graph> State<'a, G> {
         target: G::Node,
         delta: G::Cost,
     ) -> Option<(VecDeque<G::Node>, G::Cost)> {
+        if source == target {
+            return Some((VecDeque::from([source]), G::Cost::zero()));
+        }
+
+        // Ensure that there are outgoing edges from source
+        let _ = graph.get_neighbors(&source)?;
+
         let mut state = Self {
             graph,
             delta,

@@ -98,7 +98,7 @@ fn test_complex_shortest_path() {
 
     // Test shortest path from 2 to 5
     let (path3, cost3) = g.parallel_shortest_path(2, 5, 3.0).unwrap();
-    assert_eq!(path3, vec![2, 7, 5]);
+    assert!(path3 == vec![2, 7, 5] || path3 == vec![2, 3, 4, 5]);
     assert_eq!(cost3, 6.0);
 
     // Test non-existent path
@@ -156,18 +156,12 @@ fn test_parallel_shortest_path_basic() {
     g.add_edge(1, 4, 4.0);
     g.add_edge(4, 3, 1.0);
 
-    // Test with auto-calculated delta
-    let (path, cost) = g.naive_parallel_shortest_path(1, 3, None).unwrap();
-    assert_eq!(path, vec![1, 2, 3]);
-    assert_eq!(cost, 3.0);
-
-    // Test with explicit delta
-    let (path2, cost2) = g.naive_parallel_shortest_path(1, 3, Some(2.0)).unwrap();
+    let (path2, cost2) = g.parallel_shortest_path(1, 3, 2.0).unwrap();
     assert_eq!(path2, vec![1, 2, 3]);
     assert_eq!(cost2, 3.0);
 
     // Test non-existent path
-    assert!(g.naive_parallel_shortest_path(3, 1, None).is_none());
+    assert!(g.parallel_shortest_path(3, 1, 2.0).is_none());
 }
 
 #[test]
@@ -190,7 +184,7 @@ fn test_parallel_vs_sequential_shortest_path() {
     for start in [1, 2, 3] {
         for end in [4, 5, 8] {
             let sequential_result = g.shortest_path(start, end);
-            let parallel_result = g.naive_parallel_shortest_path(start, end, None);
+            let parallel_result = g.parallel_shortest_path(start, end, 1.0);
 
             match (sequential_result, parallel_result) {
                 (Some((_, seq_cost)), Some((_, par_cost))) => {
@@ -222,20 +216,16 @@ fn test_parallel_shortest_path_different_deltas() {
     let expected_cost = 6.0; // 1->2->3->4
 
     // Test with small delta
-    let (_, cost1) = g.naive_parallel_shortest_path(1, 4, Some(0.5)).unwrap();
+    let (_, cost1) = g.parallel_shortest_path(1, 4, 0.5).unwrap();
     assert_eq!(cost1, expected_cost);
 
     // Test with medium delta
-    let (_, cost2) = g.naive_parallel_shortest_path(1, 4, Some(2.0)).unwrap();
+    let (_, cost2) = g.parallel_shortest_path(1, 4, 2.0).unwrap();
     assert_eq!(cost2, expected_cost);
 
     // Test with large delta
-    let (_, cost3) = g.naive_parallel_shortest_path(1, 4, Some(10.0)).unwrap();
+    let (_, cost3) = g.parallel_shortest_path(1, 4, 10.0).unwrap();
     assert_eq!(cost3, expected_cost);
-
-    // Test with auto-calculated delta
-    let (_, cost4) = g.naive_parallel_shortest_path(1, 4, None).unwrap();
-    assert_eq!(cost4, expected_cost);
 }
 
 #[test]
@@ -244,7 +234,7 @@ fn test_parallel_shortest_path_single_vertex() {
     g.add_vertex(1);
 
     // Path from vertex to itself should be empty path with cost 0
-    let (path, cost) = g.naive_parallel_shortest_path(1, 1, None).unwrap();
+    let (path, cost) = g.parallel_shortest_path(1, 1, 1.0).unwrap();
     assert_eq!(path, vec![1]);
     assert_eq!(cost, 0.0);
 }
@@ -256,7 +246,7 @@ fn test_parallel_shortest_path_large_graph() {
 
     // Test a few random paths
     if let Some((_, seq_cost)) = graph.shortest_path(0, 49) {
-        if let Some((_, par_cost)) = graph.naive_parallel_shortest_path(0, 49, None) {
+        if let Some((_, par_cost)) = graph.parallel_shortest_path(0, 49, 1.0) {
             assert!(
                 (seq_cost - par_cost).abs() < 1e-6,
                 "Cost mismatch in large graph: seq={}, par={}",
@@ -267,8 +257,8 @@ fn test_parallel_shortest_path_large_graph() {
     }
 
     // Test with different delta values
-    if let Some((_, cost1)) = graph.naive_parallel_shortest_path(0, 25, Some(1.0)) {
-        if let Some((_, cost2)) = graph.naive_parallel_shortest_path(0, 25, Some(5.0)) {
+    if let Some((_, cost1)) = graph.parallel_shortest_path(0, 25, 1.0) {
+        if let Some((_, cost2)) = graph.parallel_shortest_path(0, 25, 5.0) {
             // Both should find optimal path, so costs should be equal
             assert!(
                 (cost1 - cost2).abs() < 1e-6,

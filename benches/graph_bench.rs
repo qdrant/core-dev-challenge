@@ -28,24 +28,11 @@ fn bench_parallel_shortest_path(c: &mut Criterion) {
     });
 }
 
-fn bench_naive_parallel_shortest_path(c: &mut Criterion) {
-    let g = load_graph();
-    c.bench_function(
-        "naive parallel shortest path on random connected graph",
-        |b| {
-            b.iter(|| {
-                g.naive_parallel_shortest_path(0, MAX - 1, Some(DELTA));
-            })
-        },
-    );
-}
-
 criterion_group!(
     name = benches;
     config = Criterion::default().significance_level(0.1).sample_size(10);
     targets =
         bench_parallel_shortest_path,
-        bench_naive_parallel_shortest_path,
         bench_shortest_path,
 );
 criterion_main!(benches);
