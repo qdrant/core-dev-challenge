@@ -76,7 +76,7 @@ impl<'a, G: Graph> State<'a, G> {
             buckets: BTreeMap::new(),
         };
 
-        state.process_next_bucket(vec![source]);
+        state.process_bucket(vec![source]);
         state.process_buckets(target);
         state.retrieve_result(source, target)
     }
@@ -105,13 +105,17 @@ impl<'a, G: Graph> State<'a, G> {
         Some((path, cost.cost))
     }
 
+    /**
+       Repeatedly process all nodes in all buckets, until all pending buckets have been processed.
+    */
     fn process_buckets(&mut self, target: G::Node) {
         let mut current_bucket_id = 0;
-        while let Some((bucket_id, bucket)) = self.pop_next_bucket() {
+        while let Some((bucket_id, bucket)) = self.buckets.pop_first() {
             debug_assert!(bucket_id > current_bucket_id);
+
             current_bucket_id = bucket_id;
 
-            self.process_next_bucket(bucket);
+            self.process_bucket(bucket);
 
             if self.lowest_costs.contains_key(&target) {
                 return;
@@ -119,20 +123,54 @@ impl<'a, G: Graph> State<'a, G> {
         }
     }
 
-    fn pop_next_bucket(&mut self) -> Option<(usize, Vec<G::Node>)> {
-        self.buckets.pop_first()
-    }
+    /**
+       Process nodes that are stored in the given bucket.
+    */
+    fn process_bucket(&mut self, mut bucket: Vec<G::Node>) {
+        /*
+           Repeatedly process the neighbors of the nodes that belong to the current bucket.
+           If there are new nodes added to the current bucket, then all nodes in the bucket
+           has to be processed again.
 
-    fn process_next_bucket(&mut self, mut bucket: Vec<G::Node>) {
+           TODO: we may be able to skip processing some nodes in the current bucket,
+           if their lowest cost is not updated.
+        */
         while self.process_current_bucket(&mut bucket) {}
 
-        self.process_bucket_future_neighbors(bucket);
+        /*
+           The neighbors of the nodes that belong to the future buckets should be processed
+           only later on.
+
+           In theory, we may be able to process them together in the earlier step. However,
+           benchmark shows that there might be significant overhead of doing this, due to
+           `process_current_bucket` being repeated for many times until no new node is added
+           to the current bucket.
+
+           By processing the neighbors of the future buckets later on, we can reduce the overhead
+           of processing them multiple times, even if this results in an additional round of processing.
+        */
+        self.process_future_bucket_neighbors(bucket);
     }
 
+    /**
+       Process neighbors of the given nodes that belong to the current bucket. Returns true if new nodes
+       were added to the current bucket for further processing.S
+
+       The neighbors are filtered based on whether the immediate cost to the neighbor from the given node
+       is less than or equal to the delta value.
+    */
     fn process_current_bucket(&mut self, current_bucket: &mut Vec<G::Node>) -> bool {
         let delta = self.delta;
+
+        // Get the neighbors of the nodes in parallel
         let edges = self.get_neighbors_from_nodes(current_bucket, |cost| cost <= delta);
 
+        /*
+           We have to perform the update on the current bucket sequentially, as benchmark shows that
+           there are too much overhead and insufficient parallelism gains when we try to do this in parallel
+           within the earlier parallel retrieval of neighbors, due to lock contention in acquiring
+           the RwLock for `lowest_costs`.
+        */
         let mut updated = false;
         for edge in edges {
             updated = updated || self.update_current_bucket_neighbor(current_bucket, &edge);
@@ -140,6 +178,35 @@ impl<'a, G: Graph> State<'a, G> {
         updated
     }
 
+    /**
+       Process neighbors of the given nodes that belong to the future buckets.
+
+       The neighbors are filtered based on whether the immediate cost to the neighbor from the given node
+       is greater than the delta value.
+    */
+    fn process_future_bucket_neighbors(&mut self, nodes: Vec<G::Node>) {
+        let delta = self.delta;
+
+        // Get the neighbors of the nodes in parallel
+        let edges = self.get_neighbors_from_nodes(&nodes, |cost| cost > delta);
+
+        /*
+           We have to perform the update on the future buckets sequentially, as benchmark shows that
+           there are too much overhead and insufficient parallelism gains when we try to do this in parallel
+           within the earlier parallel retrieval of neighbors, even when we make use of fine grained locks
+           for each bucket.
+        */
+        for edge in edges {
+            self.update_future_bucket_neighbor(&edge);
+        }
+    }
+
+    /**
+       Update a neighbor edge that belongs to the current bucket. Returns true if an update was made.
+
+       If the neighbor node has a lower total cost than the current lowest cost, it is added to the
+       current bucket to be processed again in the next iteration of processing the same bucket.
+    */
     fn update_current_bucket_neighbor(
         &mut self,
         pending_bucket: &mut Vec<G::Node>,
@@ -148,19 +215,8 @@ impl<'a, G: Graph> State<'a, G> {
         let new_cost = self.update_neighbor_cost(neighbor);
         if new_cost {
             pending_bucket.push(neighbor.target);
-            true
-        } else {
-            false
         }
-    }
-
-    fn process_bucket_future_neighbors(&mut self, current_bucket_acc: Vec<G::Node>) {
-        let delta = self.delta;
-        let edges = self.get_neighbors_from_nodes(&current_bucket_acc, |cost| cost > delta);
-
-        for edge in edges {
-            self.update_future_bucket_neighbor(&edge);
-        }
+        new_cost
     }
 
     /**
