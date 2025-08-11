@@ -1,3 +1,5 @@
+use core::hash::Hash;
+use core::ops::{Add, Div};
 use num_traits::{AsPrimitive, Zero};
 use rayon::prelude::*;
 use std::collections::hash_map::Entry;
@@ -29,7 +31,7 @@ pub trait CanComputeParallelShortestPath: Graph {
     ) -> Option<(VecDeque<Self::Node>, Self::Cost)>;
 }
 
-impl<G: Graph> CanComputeParallelShortestPath for G {
+impl<G: GraphDeps> CanComputeParallelShortestPath for G {
     fn parallel_shortest_path(
         &self,
         source: Self::Node,
@@ -40,6 +42,41 @@ impl<G: Graph> CanComputeParallelShortestPath for G {
     }
 }
 
+/**
+   A blanket trait with additional dependency constraints to use a `Graph` for parallel
+   shortest path computation.
+
+   We impose the additional dependencies here instead of on the `Graph` trait, so that
+   implementations that do not use `parallel_shortest_path` do not necessarily need to
+   implement these additional traits when implementing `Graph`.
+
+   In practice, these traits are implemented automatically if we use simple types like `u64` or `f64`
+   for the `Node` and `Cost` types. However, explicit implementations may be required if a graph
+   implementation chooses to use new type wrappers around these types.
+*/
+trait GraphDeps:
+    Graph<
+        Node: Ord + Hash,
+        Cost: PartialOrd
+                  + Zero
+                  + Add<Output = Self::Cost>
+                  + Div<Output = Self::Cost>
+                  + AsPrimitive<usize>,
+    >
+{
+}
+
+impl<G> GraphDeps for G where
+    G: Graph<
+            Node: Ord + Hash,
+            Cost: PartialOrd
+                      + Zero
+                      + Add<Output = Self::Cost>
+                      + Div<Output = Self::Cost>
+                      + AsPrimitive<usize>,
+        >
+{
+}
 /**
    The internal state that is used to run the delta-stepping algorithm.
 */
@@ -79,7 +116,7 @@ struct LowestCost<G: Graph> {
     predecessor: G::Node,
 }
 
-impl<'a, G: Graph> State<'a, G> {
+impl<'a, G: GraphDeps> State<'a, G> {
     /*
        Compute the shortest path from `source` to `target` using the delta-stepping algorithm,
        based on the given graph `G`. If a shortest path is found, returns a `VecDeque` of nodes
