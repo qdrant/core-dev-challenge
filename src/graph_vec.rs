@@ -109,11 +109,10 @@ impl Graph {
             return None;
         }
 
-        let mut dist: HashMap<u64, f64> = HashMap::new();
-        let mut prev: HashMap<u64, u64> = HashMap::new();
+        let mut prev_dist: HashMap<u64, (u64, f64)> = HashMap::new();
         let mut heap = BinaryHeap::new();
 
-        dist.insert(start, 0.0);
+        prev_dist.insert(start, (u64::MAX, 0.0));
         heap.push(State {
             cost: 0.0,
             position: start,
@@ -123,7 +122,9 @@ impl Graph {
             if position == end {
                 let mut path = vec![end];
                 let mut current = end;
-                while let Some(&p) = prev.get(&current) {
+                while let Some(&(p, _)) = prev_dist.get(&current)
+                    && p != u64::MAX
+                {
                     path.push(p);
                     current = p;
                 }
@@ -131,7 +132,7 @@ impl Graph {
                 return Some((path, cost));
             }
 
-            if cost > dist[&position] {
+            if cost > prev_dist[&position].1 {
                 continue;
             }
 
@@ -141,9 +142,13 @@ impl Graph {
                         cost: cost + weight,
                         position: neighbor,
                     };
-                    if next.cost < *dist.get(&neighbor).unwrap_or(&f64::INFINITY) {
-                        dist.insert(neighbor, next.cost);
-                        prev.insert(neighbor, position);
+                    if next.cost
+                        < *prev_dist
+                            .get(&neighbor)
+                            .map(|(_, c)| c)
+                            .unwrap_or(&f64::INFINITY)
+                    {
+                        prev_dist.insert(neighbor, (position, next.cost));
                         heap.push(next);
                     }
                 }
