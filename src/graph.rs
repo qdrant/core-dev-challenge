@@ -1,9 +1,8 @@
-use std::collections::{HashMap, BinaryHeap};
+use serde::{Deserialize, Serialize};
 use std::cmp::Ordering;
+use std::collections::{BinaryHeap, HashMap};
 use std::fs::File;
 use std::io::{self, BufReader, BufWriter};
-use serde::{Serialize, Deserialize};
-use rand::Rng;
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Graph {
@@ -32,7 +31,9 @@ impl Ord for State {
 
 impl Graph {
     pub fn new() -> Self {
-        Self { adjacency: HashMap::new() }
+        Self {
+            adjacency: HashMap::new(),
+        }
     }
 
     pub fn add_vertex(&mut self, v: u64) {
@@ -88,7 +89,10 @@ impl Graph {
         let mut heap = BinaryHeap::new();
 
         dist.insert(start, 0.0);
-        heap.push(State { cost: 0.0, position: start });
+        heap.push(State {
+            cost: 0.0,
+            position: start,
+        });
 
         while let Some(State { cost, position }) = heap.pop() {
             if position == end {
@@ -108,7 +112,10 @@ impl Graph {
 
             if let Some(neighbors) = self.adjacency.get(&position) {
                 for (&neighbor, &weight) in neighbors {
-                    let next = State { cost: cost + weight, position: neighbor };
+                    let next = State {
+                        cost: cost + weight,
+                        position: neighbor,
+                    };
                     if next.cost < *dist.get(&neighbor).unwrap_or(&f64::INFINITY) {
                         dist.insert(neighbor, next.cost);
                         prev.insert(neighbor, position);
@@ -127,48 +134,60 @@ impl Graph {
     }
 
     /// Generate a random connected graph with specified number of vertices
-    /// 
+    ///
     /// # Arguments
     /// * `num_vertices` - Number of vertices in the graph
     /// * `additional_edges` - Additional random edges beyond the minimum for connectivity
     /// * `min_weight` - Minimum edge weight (inclusive)
     /// * `max_weight` - Maximum edge weight (exclusive)
-    /// 
+    /// * `seed` - Optional seed for pseudo-RNG
+    ///
     /// # Returns
     /// A new connected Graph with random edges
-    pub fn random_connected_graph(num_vertices: u64, additional_edges: usize, min_weight: f64, max_weight: f64) -> Self {
+    pub fn random_connected_graph(
+        num_vertices: u64,
+        additional_edges: usize,
+        min_weight: f64,
+        max_weight: f64,
+        seed: Option<u128>,
+    ) -> Self {
         let mut graph = Graph::new();
-        let mut rng = rand::thread_rng();
-        
+        let seed = if let Some(seed) = seed {
+            seed
+        } else {
+            rand::random()
+        };
+        let mut rng = oorandom::Rand64::new(seed);
+
         // Add all vertices first
         for i in 0..num_vertices {
             graph.add_vertex(i);
         }
-        
+
         // Create a spanning tree to ensure connectivity
         for i in 1..num_vertices {
-            let parent = rng.gen_range(0..i);
-            let weight = rng.gen_range(min_weight..max_weight);
+            let parent = rng.rand_u64() % i;
+            let weight = rng.rand_float() * (max_weight - min_weight) + min_weight;
             graph.add_edge(parent, i, weight);
         }
-        
+
         // Add additional random edges
         let mut edges_added = 0;
         let max_attempts = additional_edges * 10;
         let mut attempts = 0;
-        
+
         while edges_added < additional_edges && attempts < max_attempts {
-            let from = rng.gen_range(0..num_vertices);
-            let to = rng.gen_range(0..num_vertices);
-            
+            let from = rng.rand_u64() % num_vertices;
+            let to = rng.rand_u64() % num_vertices;
+
             if from != to && graph.get_edge_weight(from, to).is_none() {
-                let weight = rng.gen_range(min_weight..max_weight);
+                let weight = rng.rand_float() % (max_weight - min_weight) + min_weight;
                 graph.add_edge(from, to, weight);
                 edges_added += 1;
             }
             attempts += 1;
         }
-        
+
         graph
     }
 }
@@ -178,5 +197,3 @@ impl Default for Graph {
         Self::new()
     }
 }
-
-
