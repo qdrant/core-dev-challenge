@@ -4,9 +4,9 @@ use std::collections::{BinaryHeap, HashMap};
 use std::fs::File;
 use std::io::{self, BufReader, BufWriter, Read, Write};
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Graph {
-    pub adjacency: HashMap<u64, HashMap<u64, f64>>,
+    pub adjacency: HashMap<u64, Vec<(u64, f64)>>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -36,35 +36,60 @@ impl Graph {
         }
     }
 
+    #[inline(always)]
     pub fn add_vertex(&mut self, v: u64) {
         self.adjacency.entry(v).or_default();
     }
 
+    #[inline(always)]
     pub fn add_edge(&mut self, from: u64, to: u64, weight: f64) {
         self.add_vertex(from);
         self.add_vertex(to);
-        self.adjacency.get_mut(&from).unwrap().insert(to, weight);
+        let neighbours = self.adjacency.entry(from).or_default();
+        match neighbours.as_slice().binary_search_by(|(x, _)| x.cmp(&to)) {
+            Ok(i) => {
+                neighbours[i] = (to, weight);
+            }
+            Err(i) => {
+                neighbours.insert(i, (to, weight));
+            }
+        };
     }
 
+    #[inline(always)]
     pub fn remove_vertex(&mut self, v: u64) {
         self.adjacency.remove(&v);
         for neighbors in self.adjacency.values_mut() {
-            neighbors.remove(&v);
+            if let Ok(i) = neighbors.as_slice().binary_search_by(|(x, _)| x.cmp(&v)) {
+                neighbors.remove(i);
+            }
         }
     }
 
+    #[inline(always)]
     pub fn remove_edge(&mut self, from: u64, to: u64) {
-        if let Some(neighbors) = self.adjacency.get_mut(&from) {
-            neighbors.remove(&to);
+        if let Some(neighbors) = self.adjacency.get_mut(&from)
+            && let Ok(i) = neighbors.as_slice().binary_search_by(|(x, _)| x.cmp(&to))
+        {
+            {
+                neighbors.remove(i);
+            }
         }
     }
 
-    pub fn neighbors(&self, v: u64) -> Option<&HashMap<u64, f64>> {
+    #[inline(always)]
+    pub fn neighbors(&self, v: u64) -> Option<&Vec<(u64, f64)>> {
         self.adjacency.get(&v)
     }
 
+    #[inline(always)]
     pub fn get_edge_weight(&self, from: u64, to: u64) -> Option<f64> {
-        self.adjacency.get(&from)?.get(&to).copied()
+        let neighbours = self.adjacency.get(&from)?;
+        if let Ok(i) = neighbours.binary_search_by(|(x, _)| x.cmp(&to)) {
+            Some(neighbours[i].1)
+        } else {
+            None
+        }
     }
 
     pub fn save_to_file(&self, path: &str) -> io::Result<()> {
@@ -158,11 +183,10 @@ impl Graph {
             return None;
         }
 
-        let mut dist: HashMap<u64, f64> = HashMap::new();
-        let mut prev: HashMap<u64, u64> = HashMap::new();
+        let mut prev_dist: HashMap<u64, (u64, f64)> = HashMap::new();
         let mut heap = BinaryHeap::new();
 
-        dist.insert(start, 0.0);
+        prev_dist.insert(start, (u64::MAX, 0.0));
         heap.push(State {
             cost: 0.0,
             position: start,
@@ -172,7 +196,9 @@ impl Graph {
             if position == end {
                 let mut path = vec![end];
                 let mut current = end;
-                while let Some(&p) = prev.get(&current) {
+                while let Some(&(p, _)) = prev_dist.get(&current)
+                    && p != u64::MAX
+                {
                     path.push(p);
                     current = p;
                 }
@@ -180,19 +206,23 @@ impl Graph {
                 return Some((path, cost));
             }
 
-            if cost > dist[&position] {
+            if cost > prev_dist[&position].1 {
                 continue;
             }
 
             if let Some(neighbors) = self.adjacency.get(&position) {
-                for (&neighbor, &weight) in neighbors {
+                for (neighbor, weight) in neighbors.iter().copied() {
                     let next = State {
                         cost: cost + weight,
                         position: neighbor,
                     };
-                    if next.cost < *dist.get(&neighbor).unwrap_or(&f64::INFINITY) {
-                        dist.insert(neighbor, next.cost);
-                        prev.insert(neighbor, position);
+                    if next.cost
+                        < *prev_dist
+                            .get(&neighbor)
+                            .map(|(_, c)| c)
+                            .unwrap_or(&f64::INFINITY)
+                    {
+                        prev_dist.insert(neighbor, (position, next.cost));
                         heap.push(next);
                     }
                 }

@@ -1,4 +1,4 @@
-use graph_challenge::graph::Graph;
+use graph_challenge::graph_vec::Graph;
 use std::fs;
 
 #[test]
@@ -25,8 +25,8 @@ fn test_neighbors() {
     g.add_edge(1, 2, 3.0);
     g.add_edge(1, 3, 7.0);
     let neighbors = g.neighbors(1).unwrap();
-    assert_eq!(neighbors.get(&2), Some(&3.0));
-    assert_eq!(neighbors.get(&3), Some(&7.0));
+    assert_eq!(neighbors.iter().find(|(v, _)| v == &2), Some(&(2, 3.0)));
+    assert_eq!(neighbors.iter().find(|(v, _)| v == &3), Some(&(3, 7.0)));
 }
 
 #[test]
