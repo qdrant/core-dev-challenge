@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 use std::cmp::Ordering;
 use std::collections::{BinaryHeap, HashMap};
 use std::fs::File;
-use std::io::{self, BufReader, BufWriter};
+use std::io::{self, BufReader, BufWriter, Read, Write};
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Graph {
@@ -69,14 +69,88 @@ impl Graph {
 
     pub fn save_to_file(&self, path: &str) -> io::Result<()> {
         let file = File::create(path)?;
-        let writer = BufWriter::new(file);
-        bincode::serialize_into(writer, self).map_err(io::Error::other)
+        let mut writer = BufWriter::new(file);
+
+        // Write vertex count
+        writer.write_all(&(self.adjacency.len() as u64).to_le_bytes())?;
+
+        // Offset stores the value into the file for a vertex's neighbors and their costs
+        //
+        // Therefore, we need to account for metadata as well
+        // 1 for vertex count
+        // 3 for each vertex id + neighbor count + offset associated with it
+        let vertex_count = self.adjacency.keys().count();
+        let mut offset: u64 = ((1 + vertex_count * 3) * std::mem::size_of::<u64>()) as u64;
+
+        let mut vertices = self.adjacency.keys().copied().collect::<Vec<_>>();
+        // Sort so that memory mapped files can make use of binary search
+        vertices.sort();
+
+        for vertex in vertices.iter() {
+            // Write vertex id
+            writer.write_all(&vertex.to_le_bytes())?;
+            // Write neighbor count
+            let neighbor_count = self.adjacency[vertex].len();
+            writer.write_all(&neighbor_count.to_le_bytes())?;
+            // Write vertex offset
+            writer.write_all(&offset.to_le_bytes())?;
+            // Increase vertex offset by neighbour + weight count
+            offset += (neighbor_count * 2 * std::mem::size_of::<u64>()) as u64;
+        }
+
+        for vertex in vertices.iter() {
+            if let Some(neighbors) = self.neighbors(*vertex) {
+                for (neighbor, cost) in neighbors {
+                    // Write neighbor
+                    writer.write_all(&neighbor.to_le_bytes())?;
+                    // Write cost
+                    writer.write_all(&cost.to_le_bytes())?;
+                }
+            }
+        }
+
+        writer.flush()
     }
 
     pub fn load_from_file(path: &str) -> io::Result<Self> {
         let file = File::open(path)?;
-        let reader = BufReader::new(file);
-        bincode::deserialize_from(reader).map_err(io::Error::other)
+        let mut reader = BufReader::new(file);
+        let mut buf = [0; std::mem::size_of::<u64>()];
+
+        let mut graph = Self::new();
+
+        // Read vertex count
+        reader.read_exact(&mut buf)?;
+        let vertex_count = u64::from_le_bytes(buf);
+
+        // Every vertex id and its associated # of neighbors
+        let mut vertices_neighbor_counts = Vec::new();
+
+        for _ in 0..vertex_count {
+            // Read vertex id
+            reader.read_exact(&mut buf)?;
+            let vertex = u64::from_le_bytes(buf);
+            graph.add_vertex(vertex);
+            // Read neighbor count
+            reader.read_exact(&mut buf)?;
+            let neighbor_count = u64::from_le_bytes(buf);
+            vertices_neighbor_counts.push((vertex, neighbor_count));
+            // Read offset (unused when not memmapped)
+            reader.read_exact(&mut buf)?;
+        }
+
+        for (vertex, neighbor_count) in vertices_neighbor_counts {
+            for _ in 0..neighbor_count {
+                // Read neighbor
+                reader.read_exact(&mut buf)?;
+                let neighbor = u64::from_le_bytes(buf);
+                // Read cost
+                reader.read_exact(&mut buf)?;
+                let cost = f64::from_le_bytes(buf);
+                graph.add_edge(vertex, neighbor, cost);
+            }
+        }
+        Ok(graph)
     }
 
     pub fn shortest_path(&self, start: u64, end: u64) -> Option<(Vec<u64>, f64)> {

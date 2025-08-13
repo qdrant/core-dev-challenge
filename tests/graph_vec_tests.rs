@@ -33,7 +33,7 @@ fn test_neighbors() {
 fn test_persistence() {
     let mut g = Graph::new();
     g.add_edge(1, 2, 4.5);
-    let path = "test_graph.bin";
+    let path = "test.graph";
     g.save_to_file(path).unwrap();
     let loaded = Graph::load_from_file(path).unwrap();
     assert_eq!(g.adjacency, loaded.adjacency);
