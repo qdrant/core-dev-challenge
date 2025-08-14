@@ -22,4 +22,4 @@ criterion_group!(benches,
     bench_shortest_path,
     bench_graph_generation
 );
-criterion_main!(benches); 
+criterion_main!(benches);

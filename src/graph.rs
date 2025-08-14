@@ -1,13 +1,23 @@
-use std::collections::{HashMap, BinaryHeap};
 use std::cmp::Ordering;
 use std::fs::File;
 use std::io::{self, BufReader, BufWriter};
 use serde::{Serialize, Deserialize};
 use rand::Rng;
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
+use dary_heap::QuaternaryHeap as TheHeap;
+// use std::collections::BinaryHeap as TheHeap;
+
+use nohash_hasher::IntMap as TheMap;
+// use rustc_hash::FxHashMap as TheMap;
+// use std::collections::HashMap as TheMap;
+
+// use nohash_hasher::IntMap as SecMap;
+// use std::collections::HashMap as SecMap;
+use rustc_hash::FxHashMap as SecMap;
+
+#[derive(Debug, Serialize, Deserialize, Clone, Default)]
 pub struct Graph {
-    pub adjacency: HashMap<u64, HashMap<u64, f64>>,
+    pub adjacency: TheMap<u64, TheMap<u64, f64>>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -32,7 +42,7 @@ impl Ord for State {
 
 impl Graph {
     pub fn new() -> Self {
-        Self { adjacency: HashMap::new() }
+        <_>::default()
     }
 
     pub fn add_vertex(&mut self, v: u64) {
@@ -58,7 +68,7 @@ impl Graph {
         }
     }
 
-    pub fn neighbors(&self, v: u64) -> Option<&HashMap<u64, f64>> {
+    pub fn neighbors(&self, v: u64) -> Option<&TheMap<u64, f64>> {
         self.adjacency.get(&v)
     }
 
@@ -83,18 +93,24 @@ impl Graph {
             return None;
         }
 
-        let mut dist: HashMap<u64, f64> = HashMap::new();
-        let mut prev: HashMap<u64, u64> = HashMap::new();
-        let mut heap = BinaryHeap::new();
+        // let mut dist = SecMap::<u64, f64>::with_capacity(self.adjacency.len());
+        // let mut prev = SecMap::<u64, u64>::with_capacity(self.adjacency.len());
 
-        dist.insert(start, 0.0);
+        // let mut dist = SecMap::<u64, f64>::with_capacity_and_hasher(self.adjacency.len(), <_>::default());
+        // let mut prev = SecMap::<u64, u64>::with_capacity_and_hasher(self.adjacency.len(), <_>::default());
+
+        // TODO single hashmap
+        let mut dist = vec![(f64::INFINITY, None); self.adjacency.len()];
+        let mut heap = TheHeap::new();
+
+        dist[start as usize] = (0.0, None);
         heap.push(State { cost: 0.0, position: start });
 
         while let Some(State { cost, position }) = heap.pop() {
             if position == end {
                 let mut path = vec![end];
                 let mut current = end;
-                while let Some(&p) = prev.get(&current) {
+                while let Some(&p) = dist[current as usize].1.as_ref() {
                     path.push(p);
                     current = p;
                 }
@@ -102,16 +118,15 @@ impl Graph {
                 return Some((path, cost));
             }
 
-            if cost > dist[&position] {
+            if cost > dist[position as usize].0 {
                 continue;
             }
 
             if let Some(neighbors) = self.adjacency.get(&position) {
                 for (&neighbor, &weight) in neighbors {
                     let next = State { cost: cost + weight, position: neighbor };
-                    if next.cost < *dist.get(&neighbor).unwrap_or(&f64::INFINITY) {
-                        dist.insert(neighbor, next.cost);
-                        prev.insert(neighbor, position);
+                    if next.cost < dist[neighbor as usize].0 {
+                        dist[neighbor as usize] = (next.cost, Some(position));
                         heap.push(next);
                     }
                 }
@@ -172,11 +187,3 @@ impl Graph {
         graph
     }
 }
-
-impl Default for Graph {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-
