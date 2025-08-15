@@ -1,2 +1,2 @@
-pub mod graph;
 pub mod atomic;
+pub mod graph;
