@@ -1,6 +1,5 @@
 pub(crate) mod worker;
 
-use rand::Rng;
 use serde::{Deserialize, Serialize};
 use std::cmp::Ordering;
 use std::fs::File;
@@ -292,7 +291,7 @@ impl Graph {
                     // );
                 });
             }
-            search.start_work(0, &workers[..]);
+            search.run_main_thread(0, &workers[..]);
         });
 
         if search.prev[end as usize].load(Ordering::Relaxed) == -1 {

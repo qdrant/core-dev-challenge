@@ -122,15 +122,6 @@ impl<T> AtomicMutex<T> {
     }
 }
 
-impl<T: std::fmt::Debug> std::fmt::Debug for AtomicMutex<T> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let guard = self.lock();
-        f.debug_struct("AtomicMutex")
-            .field("value", &*guard)
-            .finish()
-    }
-}
-
 impl<T> Drop for AtomicMutexGuard<'_, T> {
     fn drop(&mut self) {
         self.parent.atomlock.store(false, Ordering::Release);

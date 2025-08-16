@@ -1,15 +1,16 @@
 use std::sync::atomic::{AtomicBool, AtomicI64, AtomicU64, AtomicUsize, Ordering};
 
-use crate::atomic::{AtomicF64, AtomicLockGuard, AtomicMutex, AtomicSemaphoreGuard};
 use super::State;
+use crate::atomic::{AtomicF64, AtomicLockGuard, AtomicMutex, AtomicSemaphoreGuard};
 
 // 4096 bytes should be enough for everone.
-#[derive(Debug)]
+// Unlike `Search`'s data (costs, locks, etc), `Worker`'s data is highly contended, so we want to avoid false sharing.
+// It gives 8% performance improvement on my machine.
 #[repr(align(4096))]
 pub(crate) struct Worker {
     // Important invariant for the queue: the only the owning worker pushes to it, but anyone can pop (steal) from it.
     queue: AtomicMutex<super::TheHeap<State>>,
-    size: AtomicUsize,
+    // These metrics are updated at thread termination, and can be removed completely.
     pub(crate) steal_attempts: AtomicUsize,
     pub(crate) steal_loops: AtomicUsize,
 }
@@ -18,20 +19,17 @@ impl Worker {
     pub(crate) fn new() -> Self {
         Self {
             queue: AtomicMutex::new(super::TheHeap::new()),
-            size: AtomicUsize::new(0),
             steal_attempts: AtomicUsize::new(0),
             steal_loops: AtomicUsize::new(0),
         }
     }
 
     fn push(&self, state: State) {
-        self.size.fetch_add(1, Ordering::Relaxed);
         let mut guard = self.queue.lock();
         guard.push(state);
     }
 
     fn pop(&self) -> Option<State> {
-        self.size.fetch_add(1, Ordering::Relaxed);
         let mut guard = self.queue.lock();
         guard.pop()
     }
@@ -39,20 +37,10 @@ impl Worker {
     fn clear(&self) {
         let mut guard = self.queue.lock();
         guard.clear();
-        self.size.store(0, Ordering::Relaxed);
     }
 
     fn try_pop(&self) -> Option<State> {
-        if self.size.load(Ordering::Relaxed) == 0 {
-            return None;
-        }
-        self.queue
-            .try_lock()
-            .and_then(|mut guard| guard.pop())
-            .inspect(|_| {
-                // If we successfully popped, we should decrease the size.
-                self.size.fetch_sub(1, Ordering::Relaxed);
-            })
+        self.queue.try_lock().and_then(|mut guard| guard.pop())
     }
 }
 
@@ -78,7 +66,7 @@ impl<'search> Node<'search> {
         if cost < self.cost.load(Ordering::Relaxed) {
             let _cell_guard = AtomicLockGuard::lock(self.lock);
             if cost < self.cost.load(Ordering::Relaxed) {
-                // we are still better!
+                // our cost is still better!
                 self.cost.store(cost, Ordering::Relaxed);
                 self.prev.store(prev as i64, Ordering::Relaxed);
                 return true;
@@ -92,7 +80,7 @@ impl<'search> Node<'search> {
 #[derive(Debug)]
 pub(crate) struct Search<'graph> {
     graph: &'graph super::Graph,
-    waiters: AtomicU64,
+    waitings: AtomicU64,
     start: u64,
     end: u64,
 
@@ -117,7 +105,7 @@ impl<'ctx> Search<'ctx> {
 
         Self {
             graph,
-            waiters: AtomicU64::new(0),
+            waitings: AtomicU64::new(0),
             start,
             end,
             locks: locks.into_boxed_slice(),
@@ -126,7 +114,7 @@ impl<'ctx> Search<'ctx> {
         }
     }
 
-    pub fn start_work(&'ctx self, id: usize, workers: &'ctx [Worker]) {
+    pub fn run_main_thread(&'ctx self, id: usize, workers: &'ctx [Worker]) {
         workers[0].push(State {
             cost: 0.0,
             position: self.start,
@@ -188,9 +176,9 @@ impl<'ctx> Search<'ctx> {
 
             // Try to steal some work.
             let waiting_guard = AtomicSemaphoreGuard::increment(
-                &self.waiters,
+                &self.waitings,
                 Ordering::Relaxed,
-                Ordering::Relaxed,
+                Ordering::Release,
             );
             if let Some(state) = self.steal_some_work(id, workers, &mut steals, &mut steal_loops) {
                 // else handle the new work
@@ -199,10 +187,12 @@ impl<'ctx> Search<'ctx> {
                 stolen_state = Some(state);
                 continue 'main;
             } else {
-                // If we are here, all the threads are waiting for work, i.e. there is no more work, and we are
-                // terminating. Keep the counter incremented to avoid a race conditions.
+                // If we are here, all the threads are waiting for a work, i.e. there is no more work, and we are
+                // terminating. Keep the counter incremented to avoid a race condition.
                 std::mem::forget(waiting_guard);
-                workers[id].steal_attempts.fetch_add(steals, Ordering::Relaxed);
+                workers[id]
+                    .steal_attempts
+                    .fetch_add(steals, Ordering::Relaxed);
                 workers[id]
                     .steal_loops
                     .fetch_add(steal_loops, Ordering::Relaxed);
@@ -213,17 +203,17 @@ impl<'ctx> Search<'ctx> {
 
     fn steal_some_work(
         &'ctx self,
-        id: usize,
+        my_id: usize,
         workers: &'ctx [Worker],
         steals: &mut usize,
         steal_loops: &mut usize,
     ) -> Option<State> {
         *steal_loops += 1;
         let workers_len = workers.len();
-        while self.waiters.load(Ordering::Relaxed) != workers_len as u64 {
+        while self.waitings.load(Ordering::Acquire) != workers_len as u64 {
             for n_offset in 1..workers_len {
                 *steals += 1;
-                let neighbor_id = (id + n_offset) % workers_len;
+                let neighbor_id = (my_id + n_offset) % workers_len;
                 if let Some(state) = workers[neighbor_id].try_pop() {
                     return Some(state);
                 }
