@@ -1,17 +1,20 @@
 use criterion::{BenchmarkId, Criterion, criterion_group, criterion_main};
 use graph_challenge::graph::Graph;
 
-const BENCH_SIZE: u64 = 900000;
-const THREADS: usize = 6;
+const BENCH_SIZE: u64 = 400000;
+const THREADS: usize = 4;
 
 fn bench_shortest_path(c: &mut Criterion) {
+    use rand::SeedableRng;
     // avaraging  on multiple graphs
+    let mut rng = rand::rngs::StdRng::seed_from_u64(42);
+
     let graphs = vec![
-        Graph::random_connected_graph(BENCH_SIZE, BENCH_SIZE as usize / 100, 1.0, 10.0),
-        Graph::random_connected_graph(BENCH_SIZE, BENCH_SIZE as usize / 100, 1.0, 10.0),
-        Graph::random_connected_graph(BENCH_SIZE, BENCH_SIZE as usize / 100, 1.0, 10.0),
-        Graph::random_connected_graph(BENCH_SIZE, BENCH_SIZE as usize / 100, 1.0, 10.0),
-        Graph::random_connected_graph(BENCH_SIZE, BENCH_SIZE as usize / 100, 1.0, 10.0),
+        Graph::random_connected_graph_with_rng(BENCH_SIZE, BENCH_SIZE as usize / 100, 1.0, 10.0, &mut rng),
+        Graph::random_connected_graph_with_rng(BENCH_SIZE, BENCH_SIZE as usize / 100, 1.0, 10.0, &mut rng),
+        Graph::random_connected_graph_with_rng(BENCH_SIZE, BENCH_SIZE as usize / 100, 1.0, 10.0, &mut rng),
+        Graph::random_connected_graph_with_rng(BENCH_SIZE, BENCH_SIZE as usize / 100, 1.0, 10.0, &mut rng),
+        Graph::random_connected_graph_with_rng(BENCH_SIZE, BENCH_SIZE as usize / 100, 1.0, 10.0, &mut rng),
     ];
     let mut b = c.benchmark_group("shortest path on random connected graph");
     for mode in ["seq", "full", "parallel"] {
@@ -20,20 +23,34 @@ fn bench_shortest_path(c: &mut Criterion) {
             mode,
             |b, mode| match mode {
                 "seq" => {
-                    for g in &graphs {
-                        b.iter(|| g.shortest_path(0, BENCH_SIZE - 1));
-                    }
+                    b.iter(|| {
+                        (
+                            graphs[0].shortest_path(0, BENCH_SIZE - 1),
+                            graphs[1].shortest_path(0, BENCH_SIZE - 1),
+                            graphs[2].shortest_path(0, BENCH_SIZE - 1),
+                            graphs[3].shortest_path(0, BENCH_SIZE - 1),
+                            graphs[4].shortest_path(0, BENCH_SIZE - 1),
+                        )
+                    });
                 }
-                "full" => {
-                    for g in &graphs {
-                        b.iter(|| g.shortest_path_full(0, BENCH_SIZE - 1))
-                    }
-                }
-                "parallel" => {
-                    for g in &graphs {
-                        b.iter(|| g.parallel_shortest_path(0, BENCH_SIZE - 1, THREADS))
-                    }
-                }
+                "full" => b.iter(|| {
+                    (
+                        graphs[0].shortest_path_full(0, BENCH_SIZE - 1),
+                        graphs[1].shortest_path_full(0, BENCH_SIZE - 1),
+                        graphs[2].shortest_path_full(0, BENCH_SIZE - 1),
+                        graphs[3].shortest_path_full(0, BENCH_SIZE - 1),
+                        graphs[4].shortest_path_full(0, BENCH_SIZE - 1),
+                    )
+                }),
+                "parallel" => b.iter(|| {
+                    (
+                        graphs[0].parallel_shortest_path(0, BENCH_SIZE - 1, THREADS),
+                        graphs[1].parallel_shortest_path(0, BENCH_SIZE - 1, THREADS),
+                        graphs[2].parallel_shortest_path(0, BENCH_SIZE - 1, THREADS),
+                        graphs[3].parallel_shortest_path(0, BENCH_SIZE - 1, THREADS),
+                        graphs[4].parallel_shortest_path(0, BENCH_SIZE - 1, THREADS),
+                    )
+                }),
                 _ => unreachable!(),
             },
         );

@@ -1,38 +1,16 @@
 use std::sync::atomic::{AtomicBool, AtomicI64, AtomicU64, AtomicUsize, Ordering};
 
 use crate::atomic::{AtomicF64, AtomicLockGuard, AtomicMutex, AtomicSemaphoreGuard};
+use super::State;
 
-// TODO use super::State;
-#[derive(Debug, Clone, PartialEq)]
-struct State {
-    cost: f64,
-    position: u64,
-}
-
-impl State {}
-
-impl Eq for State {}
-
-impl PartialOrd for State {
-    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-        Some(self.cmp(other))
-    }
-}
-
-impl Ord for State {
-    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        other.cost.partial_cmp(&self.cost).unwrap()
-    }
-}
-
-// 4096 should be enough for everone. (c) Bill Gates
+// 4096 bytes should be enough for everone.
 #[derive(Debug)]
 #[repr(align(4096))]
 pub(crate) struct Worker {
     // Important invariant for the queue: the only the owning worker pushes to it, but anyone can pop (steal) from it.
     queue: AtomicMutex<super::TheHeap<State>>,
     size: AtomicUsize,
-    pub(crate) steals: AtomicUsize,
+    pub(crate) steal_attempts: AtomicUsize,
     pub(crate) steal_loops: AtomicUsize,
 }
 
@@ -41,7 +19,7 @@ impl Worker {
         Self {
             queue: AtomicMutex::new(super::TheHeap::new()),
             size: AtomicUsize::new(0),
-            steals: AtomicUsize::new(0),
+            steal_attempts: AtomicUsize::new(0),
             steal_loops: AtomicUsize::new(0),
         }
     }
@@ -56,6 +34,12 @@ impl Worker {
         self.size.fetch_add(1, Ordering::Relaxed);
         let mut guard = self.queue.lock();
         guard.pop()
+    }
+
+    fn clear(&self) {
+        let mut guard = self.queue.lock();
+        guard.clear();
+        self.size.store(0, Ordering::Relaxed);
     }
 
     fn try_pop(&self) -> Option<State> {
@@ -109,6 +93,8 @@ impl<'search> Node<'search> {
 pub(crate) struct Search<'graph> {
     graph: &'graph super::Graph,
     waiters: AtomicU64,
+    start: u64,
+    end: u64,
 
     // See the `Node` struct comments for some explanations.
     locks: Box<[AtomicBool]>,
@@ -117,7 +103,7 @@ pub(crate) struct Search<'graph> {
 }
 
 impl<'ctx> Search<'ctx> {
-    pub fn new(graph: &'ctx super::Graph, start: u64) -> Self {
+    pub fn new(graph: &'ctx super::Graph, start: u64, end: u64) -> Self {
         let size = graph.adjacency.len() + 1;
         let mut locks = Vec::with_capacity(size);
         let mut costs = Vec::with_capacity(size);
@@ -132,16 +118,18 @@ impl<'ctx> Search<'ctx> {
         Self {
             graph,
             waiters: AtomicU64::new(0),
+            start,
+            end,
             locks: locks.into_boxed_slice(),
             costs: costs.into_boxed_slice(),
             prev: prev.into_boxed_slice(),
         }
     }
 
-    pub fn start_work(&'ctx self, id: usize, workers: &'ctx [Worker], start: u64) {
+    pub fn start_work(&'ctx self, id: usize, workers: &'ctx [Worker]) {
         workers[0].push(State {
             cost: 0.0,
-            position: start,
+            position: self.start,
         });
         self.run_worker(id, workers);
     }
@@ -167,6 +155,12 @@ impl<'ctx> Search<'ctx> {
                         }
                     }
                 };
+
+                let end_cost = self.costs[self.end as usize].load(Ordering::Relaxed);
+                if state.cost >= end_cost {
+                    me.clear();
+                    break 'work;
+                }
 
                 let node = Node::new(self, state.position);
                 // if we are still relevant, i.e. our cost is still the best known.
@@ -208,7 +202,7 @@ impl<'ctx> Search<'ctx> {
                 // If we are here, all the threads are waiting for work, i.e. there is no more work, and we are
                 // terminating. Keep the counter incremented to avoid a race conditions.
                 std::mem::forget(waiting_guard);
-                workers[id].steals.fetch_add(steals, Ordering::Relaxed);
+                workers[id].steal_attempts.fetch_add(steals, Ordering::Relaxed);
                 workers[id]
                     .steal_loops
                     .fetch_add(steal_loops, Ordering::Relaxed);

@@ -211,8 +211,24 @@ impl Graph {
         min_weight: f64,
         max_weight: f64,
     ) -> Self {
-        let mut graph = Graph::new();
         let mut rng = rand::thread_rng();
+        Self::random_connected_graph_with_rng(
+            num_vertices,
+            additional_edges,
+            min_weight,
+            max_weight,
+            &mut rng,
+        )
+    }
+
+    pub fn random_connected_graph_with_rng<Rng: rand::Rng>(
+        num_vertices: u64,
+        additional_edges: usize,
+        min_weight: f64,
+        max_weight: f64,
+        rng: &mut Rng,
+    ) -> Self {
+        let mut graph = Graph::new();
 
         // Add all vertices first
         for i in 0..num_vertices {
@@ -257,7 +273,7 @@ impl Graph {
             return None;
         }
 
-        let search = self::worker::Search::new(self, start);
+        let search = self::worker::Search::new(self, start, end);
         let workers = (0..threads)
             .map(|_| self::worker::Worker::new())
             .collect::<Vec<_>>();
@@ -276,7 +292,7 @@ impl Graph {
                     // );
                 });
             }
-            search.start_work(0, &workers[..], start);
+            search.start_work(0, &workers[..]);
         });
 
         if search.prev[end as usize].load(Ordering::Relaxed) == -1 {

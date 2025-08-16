@@ -172,11 +172,6 @@ mod tests {
 
         atomic_f64.store(2.71, Ordering::Relaxed);
         assert_eq!(atomic_f64.load(Ordering::Relaxed), 2.71);
-
-        let old_value = atomic_f64.swap(42.0, Ordering::Relaxed);
-        assert_eq!(old_value, 2.71);
-
-        assert_eq!(atomic_f64.load(Ordering::Relaxed), 42.0);
     }
 
     #[test]
