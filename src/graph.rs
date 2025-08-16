@@ -136,66 +136,6 @@ impl Graph {
         None
     }
 
-    pub fn shortest_path_full(&self, start: u64, end: u64) -> Option<(Vec<u64>, f64)> {
-        // TODO more compact vec-based implementation.
-        //
-        // questions:
-        // 1. [x] can I change public fields?  YES, BACKWARD COMPATIBILITY NOT NEEDED
-        // 2. do I need to handle negative/NaN weights?
-        // 3. the examples use sequential node ids, can I rely on non-sparce node ids?
-        if !self.adjacency.contains_key(&start) || !self.adjacency.contains_key(&end) {
-            return None;
-        }
-
-        // let mut dist = SecMap::<u64, f64>::with_capacity(self.adjacency.len());
-        // let mut prev = SecMap::<u64, u64>::with_capacity(self.adjacency.len());
-
-        // let mut dist = SecMap::<u64, f64>::with_capacity_and_hasher(self.adjacency.len(), <_>::default());
-        // let mut prev = SecMap::<u64, u64>::with_capacity_and_hasher(self.adjacency.len(), <_>::default());
-
-        // TODO single hashmap
-        let mut dist = vec![(f64::INFINITY, None); self.adjacency.len() + 1];
-        let mut heap = TheHeap::new();
-
-        dist[start as usize] = (0.0, None);
-        heap.push(State {
-            cost: 0.0,
-            position: start,
-        });
-
-        while let Some(State { cost, position }) = heap.pop() {
-            if cost > dist[position as usize].0 {
-                continue;
-            }
-
-            if let Some(neighbors) = self.adjacency.get(&position) {
-                for (&neighbor, &weight) in neighbors {
-                    let next = State {
-                        cost: cost + weight,
-                        position: neighbor,
-                    };
-                    if next.cost < dist[neighbor as usize].0 {
-                        dist[neighbor as usize] = (next.cost, Some(position));
-                        heap.push(next);
-                    }
-                }
-            }
-        }
-
-        if dist[end as usize].0 == f64::INFINITY {
-            None
-        } else {
-            let mut path = vec![end];
-            let mut current = end;
-            while let Some(&p) = dist[current as usize].1.as_ref() {
-                path.push(p);
-                current = p;
-            }
-            path.reverse();
-            Some((path, dist[end as usize].0))
-        }
-    }
-
     // For backward compatibility with unweighted graphs
     pub fn add_unweighted_edge(&mut self, from: u64, to: u64) {
         self.add_edge(from, to, 1.0);
