@@ -19,11 +19,41 @@ fn bench_compare_5x(c: &mut Criterion) {
     let mut rng = rand::rngs::StdRng::seed_from_u64(42);
 
     let graphs = vec![
-        Graph::random_connected_graph_with_rng(BENCH_SIZE, BENCH_SIZE as usize / 100, 1.0, 10.0, &mut rng),
-        Graph::random_connected_graph_with_rng(BENCH_SIZE, BENCH_SIZE as usize / 100, 1.0, 10.0, &mut rng),
-        Graph::random_connected_graph_with_rng(BENCH_SIZE, BENCH_SIZE as usize / 100, 1.0, 10.0, &mut rng),
-        Graph::random_connected_graph_with_rng(BENCH_SIZE, BENCH_SIZE as usize / 100, 1.0, 10.0, &mut rng),
-        Graph::random_connected_graph_with_rng(BENCH_SIZE, BENCH_SIZE as usize / 100, 1.0, 10.0, &mut rng),
+        Graph::random_connected_graph_with_rng(
+            BENCH_SIZE,
+            BENCH_SIZE as usize / 100,
+            1.0,
+            10.0,
+            &mut rng,
+        ),
+        Graph::random_connected_graph_with_rng(
+            BENCH_SIZE,
+            BENCH_SIZE as usize / 100,
+            1.0,
+            10.0,
+            &mut rng,
+        ),
+        Graph::random_connected_graph_with_rng(
+            BENCH_SIZE,
+            BENCH_SIZE as usize / 100,
+            1.0,
+            10.0,
+            &mut rng,
+        ),
+        Graph::random_connected_graph_with_rng(
+            BENCH_SIZE,
+            BENCH_SIZE as usize / 100,
+            1.0,
+            10.0,
+            &mut rng,
+        ),
+        Graph::random_connected_graph_with_rng(
+            BENCH_SIZE,
+            BENCH_SIZE as usize / 100,
+            1.0,
+            10.0,
+            &mut rng,
+        ),
     ];
     let mut b = c.benchmark_group("compare implementations on 5 random graphs");
     for mode in ["seq", "parallel"] {
@@ -65,5 +95,10 @@ fn bench_graph_generation(c: &mut Criterion) {
     });
 }
 
-criterion_group!(benches, bench_shortest_path, bench_compare_5x, bench_graph_generation);
+criterion_group!(
+    benches,
+    bench_shortest_path,
+    bench_compare_5x,
+    bench_graph_generation
+);
 criterion_main!(benches);

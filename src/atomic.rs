@@ -63,7 +63,6 @@ impl AtomicF64 {
     pub fn store(&self, value: f64, order: Ordering) {
         self.0.store(value.to_bits(), order);
     }
-
 }
 
 pub(crate) struct AtomicSemaphoreGuard<'atomic> {
