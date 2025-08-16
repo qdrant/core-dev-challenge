@@ -278,10 +278,11 @@ impl Graph {
             .collect::<Vec<_>>();
 
         std::thread::scope(|s| {
+            let mut worker_threads = Vec::with_capacity(threads - 1);
             for id in 1..threads {
                 let workers = &workers[..];
                 let search = &search;
-                s.spawn(move || {
+                let worker = s.spawn(move || {
                     search.run_worker(id, workers);
                     // let steals = workers[id].steals.load(Ordering::Relaxed);
                     // let steal_loops = workers[id].steal_loops.load(Ordering::Relaxed);
@@ -290,8 +291,14 @@ impl Graph {
                     //     id, steals, steal_loops
                     // );
                 });
+                worker_threads.push(worker);
             }
             search.run_main_thread(0, &workers[..]);
+
+            // it is a safety measure to detect deadlocks
+            for thread in worker_threads {
+                thread.join().unwrap();
+            }
         });
 
         if search.prev[end as usize].load(Ordering::Relaxed) == -1 {
