@@ -38,6 +38,12 @@ impl Graph {
         <_>::default()
     }
 
+    pub fn with_capacity(capacity: usize) -> Self {
+        Self {
+            adjacency: TheMap::with_capacity_and_hasher(capacity, <_>::default()),
+        }
+    }
+
     pub fn add_vertex(&mut self, v: u64) {
         self.adjacency.entry(v).or_default();
     }
@@ -227,7 +233,7 @@ impl Graph {
         max_weight: f64,
         rng: &mut Rng,
     ) -> Self {
-        let mut graph = Graph::new();
+        let mut graph = Graph::with_capacity(num_vertices as usize);
 
         // Add all vertices first
         for i in 0..num_vertices {
