@@ -92,11 +92,11 @@ impl Graph {
             return None;
         }
 
-        // TODO single hashmap
-        let mut dist = vec![(f64::INFINITY, None); self.adjacency.len() + 1];
+        let mut dist = vec![f64::INFINITY; self.adjacency.len() + 1];
+        let mut prev = vec![None; self.adjacency.len() + 1];
         let mut heap = TheHeap::new();
 
-        dist[start as usize] = (0.0, None);
+        dist[start as usize] = 0.0;
         heap.push(State {
             cost: 0.0,
             position: start,
@@ -106,7 +106,7 @@ impl Graph {
             if position == end {
                 let mut path = vec![end];
                 let mut current = end;
-                while let Some(&p) = dist[current as usize].1.as_ref() {
+                while let Some(p) = prev[current as usize] {
                     path.push(p);
                     current = p;
                 }
@@ -114,7 +114,7 @@ impl Graph {
                 return Some((path, cost));
             }
 
-            if cost > dist[position as usize].0 {
+            if cost > dist[position as usize] {
                 continue;
             }
 
@@ -124,8 +124,9 @@ impl Graph {
                         cost: cost + weight,
                         position: neighbor,
                     };
-                    if next.cost < dist[neighbor as usize].0 {
-                        dist[neighbor as usize] = (next.cost, Some(position));
+                    if next.cost < dist[neighbor as usize] {
+                        dist[neighbor as usize] = next.cost;
+                        prev[neighbor as usize] = Some(position);
                         heap.push(next);
                     }
                 }
