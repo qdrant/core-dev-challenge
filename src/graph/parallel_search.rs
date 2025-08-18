@@ -139,7 +139,48 @@ impl<'ctx> Search<'ctx> {
         }
     }
 
-    pub fn run_main_thread(&'ctx self, id: usize, workers: &'ctx [Worker]) {
+    pub fn run(&'ctx self, threads: usize) -> Option<(Vec<u64>, f64)> {
+        let workers = (0..threads).map(|_| Worker::new()).collect::<Vec<_>>();
+        std::thread::scope(|s| {
+            let mut worker_threads = Vec::with_capacity(threads - 1);
+            for id in 1..threads {
+                let workers = &workers[..];
+                let worker = s.spawn(move || {
+                    self.run_worker(id, workers);
+                    // let steals = workers[id].steals.load(Ordering::Relaxed);
+                    // let steal_loops = workers[id].steal_loops.load(Ordering::Relaxed);
+                    // eprintln!(
+                    //     "Worker {} finished with {} steals, {} loops",
+                    //     id, steals, steal_loops
+                    // );
+                });
+                worker_threads.push(worker);
+            }
+            self.run_main_thread(0, &workers[..]);
+
+            // it is a safety measure to detect deadlocks
+            for thread in worker_threads {
+                thread.join().unwrap();
+            }
+        });
+
+        if self.prev[self.end as usize].load(Ordering::Relaxed) == -1 {
+            None
+        } else {
+            let mut path = vec![self.end];
+            let mut prev;
+            while {
+                prev = self.prev[*path.last().unwrap() as usize].load(Ordering::Relaxed);
+                prev >= 0
+            } {
+                path.push(prev as u64);
+            }
+            path.reverse();
+            Some((path, self.costs[self.end as usize].load(Ordering::Relaxed)))
+        }
+    }
+
+    fn run_main_thread(&'ctx self, id: usize, workers: &'ctx [Worker]) {
         workers[0].push(State {
             cost: 0.0,
             position: self.start,
@@ -147,7 +188,7 @@ impl<'ctx> Search<'ctx> {
         self.run_worker(id, workers);
     }
 
-    pub fn run_worker(&'ctx self, id: usize, workers: &'ctx [Worker]) {
+    fn run_worker(&'ctx self, id: usize, workers: &'ctx [Worker]) {
         let mut steals = 0;
         let mut steal_loops = 0;
         let me = &workers[id];

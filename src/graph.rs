@@ -1,4 +1,4 @@
-pub(crate) mod worker;
+pub(crate) mod parallel_search;
 
 use serde::{Deserialize, Serialize};
 use std::cmp::Ordering;
@@ -214,53 +214,11 @@ impl Graph {
         end: u64,
         threads: usize,
     ) -> Option<(Vec<u64>, f64)> {
-        use std::sync::atomic::Ordering;
         if !self.adjacency.contains_key(&start) || !self.adjacency.contains_key(&end) {
             return None;
         }
 
-        let search = self::worker::Search::new(self, start, end);
-        let workers = (0..threads)
-            .map(|_| self::worker::Worker::new())
-            .collect::<Vec<_>>();
-
-        std::thread::scope(|s| {
-            let mut worker_threads = Vec::with_capacity(threads - 1);
-            for id in 1..threads {
-                let workers = &workers[..];
-                let search = &search;
-                let worker = s.spawn(move || {
-                    search.run_worker(id, workers);
-                    // let steals = workers[id].steals.load(Ordering::Relaxed);
-                    // let steal_loops = workers[id].steal_loops.load(Ordering::Relaxed);
-                    // eprintln!(
-                    //     "Worker {} finished with {} steals, {} loops",
-                    //     id, steals, steal_loops
-                    // );
-                });
-                worker_threads.push(worker);
-            }
-            search.run_main_thread(0, &workers[..]);
-
-            // it is a safety measure to detect deadlocks
-            for thread in worker_threads {
-                thread.join().unwrap();
-            }
-        });
-
-        if search.prev[end as usize].load(Ordering::Relaxed) == -1 {
-            None
-        } else {
-            let mut path = vec![end];
-            let mut prev;
-            while {
-                prev = search.prev[*path.last().unwrap() as usize].load(Ordering::Relaxed);
-                prev >= 0
-            } {
-                path.push(prev as u64);
-            }
-            path.reverse();
-            Some((path, search.costs[end as usize].load(Ordering::Relaxed)))
-        }
+        let search = self::parallel_search::Search::new(self, start, end);
+        search.run(threads)
     }
 }
