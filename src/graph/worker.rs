@@ -3,6 +3,10 @@ use std::sync::atomic::{AtomicBool, AtomicI64, AtomicU64, AtomicUsize, Ordering}
 use super::State;
 use crate::atomic::{AtomicF64, AtomicLockGuard, AtomicMutex, AtomicSemaphoreGuard};
 
+// Do not steal if the queue is smaller (0 or 1).
+// It prevents a race condition at the end of the work.
+const MIN_QUEUE_STEAL_SIZE: usize = 2;
+
 // 4096 bytes should be enough for everone.
 // Unlike `Search`'s data (costs, locks, etc), `Worker`'s data is highly contended, so we want to avoid false sharing.
 // It gives 8% performance improvement on my machine.
@@ -10,6 +14,7 @@ use crate::atomic::{AtomicF64, AtomicLockGuard, AtomicMutex, AtomicSemaphoreGuar
 pub(crate) struct Worker {
     // Important invariant for the queue: the only the owning worker pushes to it, but anyone can pop (steal) from it.
     queue: AtomicMutex<super::TheHeap<State>>,
+    queue_size: AtomicUsize,
     // These metrics are updated at thread termination, and can be removed completely.
     pub(crate) steal_attempts: AtomicUsize,
     pub(crate) steal_loops: AtomicUsize,
@@ -19,6 +24,7 @@ impl Worker {
     pub(crate) fn new() -> Self {
         Self {
             queue: AtomicMutex::new(super::TheHeap::new()),
+            queue_size: AtomicUsize::new(0),
             steal_attempts: AtomicUsize::new(0),
             steal_loops: AtomicUsize::new(0),
         }
@@ -27,20 +33,39 @@ impl Worker {
     fn push(&self, state: State) {
         let mut guard = self.queue.lock();
         guard.push(state);
+        self.queue_size.fetch_add(1, Ordering::Relaxed);
     }
 
     fn pop(&self) -> Option<State> {
         let mut guard = self.queue.lock();
-        guard.pop()
+        guard.pop().inspect(|_| {
+            self.queue_size.fetch_sub(1, Ordering::Relaxed);
+        })
     }
 
     fn clear(&self) {
         let mut guard = self.queue.lock();
         guard.clear();
+        self.queue_size.store(0, Ordering::Relaxed);
     }
 
-    fn try_pop(&self) -> Option<State> {
-        self.queue.try_lock().and_then(|mut guard| guard.pop())
+    fn try_steal(&self, min_size: usize) -> Option<State> {
+        if self.queue_size.load(Ordering::Relaxed) >= min_size {
+            self.queue
+                .try_lock()
+                .and_then(|mut guard| {
+                    if guard.len() >= min_size {
+                        guard.pop()
+                    } else {
+                        None
+                    }
+                })
+                .inspect(|_| {
+                    self.queue_size.fetch_sub(1, Ordering::Relaxed);
+                })
+        } else {
+            None
+        }
     }
 }
 
@@ -66,7 +91,7 @@ impl<'search> Node<'search> {
         if cost < self.cost.load(Ordering::Relaxed) {
             let _cell_guard = AtomicLockGuard::lock(self.lock);
             if cost < self.cost.load(Ordering::Relaxed) {
-                // our cost is still better!
+                // our cost is still better!  updating.
                 self.cost.store(cost, Ordering::Relaxed);
                 self.prev.store(prev as i64, Ordering::Relaxed);
                 return true;
@@ -183,7 +208,7 @@ impl<'ctx> Search<'ctx> {
             if let Some(state) = self.steal_some_work(id, workers, &mut steals, &mut steal_loops) {
                 // else handle the new work
                 std::mem::drop(waiting_guard);
-                // we do not put it into our worker queue to avoid repeated stealing.
+                // do not put it into our worker queue just to fetch immediately.
                 stolen_state = Some(state);
                 continue 'main;
             } else {
@@ -214,7 +239,7 @@ impl<'ctx> Search<'ctx> {
             for n_offset in 1..workers_len {
                 *steals += 1;
                 let neighbor_id = (my_id + n_offset) % workers_len;
-                if let Some(state) = workers[neighbor_id].try_pop() {
+                if let Some(state) = workers[neighbor_id].try_steal(MIN_QUEUE_STEAL_SIZE) {
                     return Some(state);
                 }
                 std::thread::yield_now();
