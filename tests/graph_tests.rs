@@ -54,6 +54,19 @@ fn test_shortest_path() {
 }
 
 #[test]
+fn test_shortest_path_parallel() {
+    let mut g = Graph::new();
+    g.add_edge(1, 2, 1.0);
+    g.add_edge(2, 3, 2.0);
+    g.add_edge(1, 4, 4.0);
+    g.add_edge(4, 3, 1.0);
+    let (path, cost) = g.parallel_shortest_path(1, 3, 4).unwrap();
+    assert_eq!(path, vec![1, 2, 3]);
+    assert_eq!(cost, 3.0);
+    assert!(g.shortest_path(3, 1).is_none());
+}
+
+#[test]
 fn test_weighted_shortest_path() {
     let mut g = Graph::new();
     g.add_edge(1, 2, 5.0);
@@ -83,7 +96,7 @@ fn test_complex_shortest_path() {
     // Test shortest path from 1 to 5
     // Path options:
     // 1 -> 6 -> 7 -> 5 = 2 + 5 + 3 = 10
-    // 1 -> 2 -> 7 -> 5 = 4 + 3 + 3 = 10  
+    // 1 -> 2 -> 7 -> 5 = 4 + 3 + 3 = 10
     // 1 -> 8 -> 5 = 6 + 4 = 10
     // 1 -> 2 -> 3 -> 4 -> 5 = 4 + 2 + 3 + 1 = 10
     let (path1, cost1) = g.shortest_path(1, 5).unwrap();
@@ -105,7 +118,46 @@ fn test_complex_shortest_path() {
     assert!(g.shortest_path(5, 1).is_none());
 }
 
+#[test]
+fn test_complex_parallel_shortest_path() {
+    let mut g = Graph::new();
+    // Create a more complex graph with multiple possible paths
+    g.add_edge(1, 2, 4.0);
+    g.add_edge(2, 3, 2.0);
+    g.add_edge(3, 4, 3.0);
+    g.add_edge(4, 5, 1.0);
+    g.add_edge(1, 6, 2.0);
+    g.add_edge(6, 7, 5.0);
+    g.add_edge(7, 5, 3.0);
+    g.add_edge(1, 8, 6.0);
+    g.add_edge(8, 5, 4.0);
+    g.add_edge(2, 7, 3.0);
+    g.add_edge(3, 8, 5.0);
 
+    // Test shortest path from 1 to 5
+    // Path options:
+    // 1 -> 6 -> 7 -> 5 = 2 + 5 + 3 = 10
+    // 1 -> 2 -> 7 -> 5 = 4 + 3 + 3 = 10
+    // 1 -> 8 -> 5 = 6 + 4 = 10
+    // 1 -> 2 -> 3 -> 4 -> 5 = 4 + 2 + 3 + 1 = 10
+    let (path1, cost1) = g.parallel_shortest_path(1, 5, 4).unwrap();
+    // The algorithm found [1, 8, 5] which is correct (cost = 10)
+    assert_eq!(cost1, 10.0);
+    assert!(path1.len() >= 2);
+
+    // Test shortest path from 1 to 8
+    let (path2, cost2) = g.parallel_shortest_path(1, 8, 4).unwrap();
+    assert_eq!(path2, vec![1, 8]);
+    assert_eq!(cost2, 6.0);
+
+    // Test shortest path from 2 to 5
+    let (path3, cost3) = g.parallel_shortest_path(2, 5, 4).unwrap();
+    assert_eq!(path3, vec![2, 7, 5]);
+    assert_eq!(cost3, 6.0);
+
+    // Test non-existent path
+    assert!(g.parallel_shortest_path(5, 1, 4).is_none());
+}
 
 #[test]
 fn test_unweighted_edge() {
@@ -114,20 +166,35 @@ fn test_unweighted_edge() {
     assert_eq!(g.get_edge_weight(1, 2), Some(1.0));
 }
 
-
 #[test]
 fn test_random_connected_graph() {
     let graph = Graph::random_connected_graph(10, 5, 1.0, 10.0);
-    
+
     // Check that we have the right number of vertices
     assert_eq!(graph.adjacency.len(), 10);
-    
+
     // Count edges (should be at least 9 for connectivity + 5 additional)
-    let edge_count: usize = graph.adjacency.values().map(|neighbors| neighbors.len()).sum();
+    let edge_count: usize = graph
+        .adjacency
+        .values()
+        .map(|neighbors| neighbors.len())
+        .sum();
     assert!(edge_count >= 14); // 9 for spanning tree + 5 additional
-    
+
     // Check connectivity by ensuring there's a path from 0 to 9
     let (path, _cost) = graph.shortest_path(0, 9).unwrap();
     assert!(!path.is_empty());
-    
+}
+
+#[test]
+fn parallel_vs_single_thread() {
+    const BENCH_SIZE: u64 = 900000;
+    const THREADS: usize = 4;
+
+    let g = Graph::random_connected_graph(BENCH_SIZE, BENCH_SIZE as usize / 100, 1.0, 10.0);
+
+    let single = g.shortest_path(0, BENCH_SIZE - 1);
+    let parallel = g.parallel_shortest_path(0, BENCH_SIZE - 1, THREADS);
+
+    assert_eq!(single, parallel);
 }
